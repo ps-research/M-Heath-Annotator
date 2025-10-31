@@ -303,7 +303,7 @@ const configSlice = createSlice({
       })
       .addCase(fetchAPIKeys.fulfilled, (state, action) => {
         state.loading.apiKeys = false;
-        state.apiKeys = action.payload;
+        state.apiKeys = action.payload?.data || action.payload; ;
       })
       .addCase(fetchAPIKeys.rejected, (state, action) => {
         state.loading.apiKeys = false;

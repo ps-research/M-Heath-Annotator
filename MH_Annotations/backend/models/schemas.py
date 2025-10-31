@@ -126,7 +126,15 @@ class ConfigUpdate(BaseModel):
 
 class APIKeyUpdate(BaseModel):
     """Request to update API key."""
-    api_key: str = Field(..., min_length=20)
+    api_key: Optional[str] = Field(None)  # Allow None for deletion
+    
+    @field_validator('api_key')
+    @classmethod
+    def validate_api_key(cls, v):
+        # If provided and not None, must be at least 20 chars
+        if v is not None and len(v) < 20:
+            raise ValueError('API key must be at least 20 characters')
+        return v
 
 
 class AnnotatorDomainConfig(BaseModel):

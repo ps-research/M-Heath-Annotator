@@ -67,11 +67,16 @@ async def update_api_key(annotator_id: int, key_update: APIKeyUpdate):
         raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
     
     try:
-        config_service.update_api_key(annotator_id, key_update.api_key)
+        # Treat None or empty string as deletion
+        api_key_value = key_update.api_key if key_update.api_key else ""
+        config_service.update_api_key(annotator_id, api_key_value)
+        
+        message = f"API key deleted for annotator {annotator_id}" if not api_key_value else f"API key updated for annotator {annotator_id}"
+        
         return APIResponse(
             success=True,
             data={"annotator_id": annotator_id},
-            message=f"API key updated for annotator {annotator_id}"
+            message=message
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

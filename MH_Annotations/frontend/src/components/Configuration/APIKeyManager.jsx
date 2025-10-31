@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef} from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   Card,
@@ -19,6 +19,7 @@ import {
   CheckCircle,
   Error as ErrorIcon,
   Save as SaveIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import {
   fetchAPIKeys,
@@ -42,15 +43,33 @@ const APIKeyManager = () => {
   const [testing, setTesting] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Initialize local state when Redux state changes
+  // Add this new ref to track initial load
+  const initialLoadDone = useRef(false);
+  
+  // Load API keys from backend on mount (only once)
   useEffect(() => {
-    const newLocalKeys = {};
-    ANNOTATOR_IDS.forEach((id) => {
-      const key = apiKeys[`annotator_${id}`] || '';
-      newLocalKeys[id] = key;
-    });
-    setLocalKeys(newLocalKeys);
-  }, [apiKeys]);
+    const loadKeys = async () => {
+      await dispatch(fetchAPIKeys()).unwrap();
+      initialLoadDone.current = true;
+    };
+    
+    if (!initialLoadDone.current) {
+      loadKeys();
+    }
+  }, [dispatch]);
+
+  // Initialize local state ONLY on first load from Redux
+  useEffect(() => {
+    // Only sync from Redux if this is the initial load
+    if (initialLoadDone.current && Object.keys(localKeys).length === 0) {
+      const newLocalKeys = {};
+      ANNOTATOR_IDS.forEach((id) => {
+        const key = apiKeys[`annotator_${id}`] || '';
+        newLocalKeys[id] = key;
+      });
+      setLocalKeys(newLocalKeys);
+    }
+  }, [apiKeys, localKeys]);
 
   // Check for unsaved changes
   useEffect(() => {
@@ -158,7 +177,33 @@ const APIKeyManager = () => {
 
     try {
       await Promise.all(promises);
-      // Success is handled by Redux state update
+      // Success - keep local keys as-is (don't reload from backend)
+      // This preserves the full unmasked keys in local state
+      setHasChanges(false);
+    } catch (error) {
+      // Error is handled by Redux error state
+    }
+  };
+  const handleDeleteKey = async (annotatorId) => {
+    if (!window.confirm(`Delete API key for Annotator ${annotatorId}?`)) {
+      return;
+    }
+
+    try {
+      // Update with empty key to delete
+      await dispatch(updateAPIKey({ annotatorId, apiKey: '' })).unwrap();
+      
+      // Clear from local state
+      setLocalKeys((prev) => ({
+        ...prev,
+        [annotatorId]: '',
+      }));
+      
+      // Clear validation
+      setValidation((prev) => ({
+        ...prev,
+        [annotatorId]: null,
+      }));
     } catch (error) {
       // Error is handled by Redux error state
     }
@@ -189,6 +234,9 @@ const APIKeyManager = () => {
               <Typography variant="subtitle2" gutterBottom>
                 Annotator {id}
               </Typography>
+
+
+
               <Stack direction="row" spacing={1} alignItems="center">
                 <TextField
                   fullWidth
@@ -199,13 +247,10 @@ const APIKeyManager = () => {
                   placeholder={`Enter API key for Annotator ${id}`}
                   error={validation[id] && !validation[id].valid}
                   helperText={validation[id]?.message || ''}
-                  InputProps={{
-                    endAdornment: localKeys[id] && !visibility[id] && (
-                      <Typography variant="caption" color="text.secondary">
-                        {maskKey(localKeys[id])}
-                      </Typography>
-                    ),
-                  }}
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
                 />
                 <Tooltip title={visibility[id] ? 'Hide' : 'Show'}>
                   <IconButton
@@ -214,6 +259,16 @@ const APIKeyManager = () => {
                     disabled={!localKeys[id]}
                   >
                     {visibility[id] ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Delete Key">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleDeleteKey(id)}
+                    disabled={!localKeys[id]}
+                    color="error"
+                  >
+                    <DeleteIcon />
                   </IconButton>
                 </Tooltip>
                 <Button

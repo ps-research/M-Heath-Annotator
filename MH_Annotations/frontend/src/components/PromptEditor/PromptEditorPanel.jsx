@@ -27,6 +27,7 @@ import PromptActions from './PromptActions';
 import PromptVersionsPanel from './PromptVersionsPanel';
 import SaveVersionDialog from './SaveVersionDialog';
 import PreviewDialog from './PreviewDialog';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 
 const PromptEditorPanel = () => {
   const dispatch = useDispatch();
@@ -66,31 +67,32 @@ const PromptEditorPanel = () => {
 
   // Load all prompts on mount
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        await dispatch(fetchPrompts()).unwrap();
-        setInitialLoadComplete(true);
-      } catch (error) {
-        setInitialLoadComplete(true);
-      }
-    };
+      const loadData = async () => {
+        try {
+          await dispatch(fetchPrompts()).unwrap();
+          setInitialLoadComplete(true);
+        } catch (error) {
+          setInitialLoadComplete(true);
+        }
+      };
 
-    loadData();
-  }, [dispatch]);
+      loadData();
+    }, [dispatch]);
 
-  // Load specific prompt when selection changes
-  useEffect(() => {
+    // Load specific prompt when selection changes
+    useEffect(() => {
     const loadPrompt = async () => {
       try {
         const result = await dispatch(
           fetchPrompt({ annotatorId: selectedAnnotator, domain: selectedDomain })
         ).unwrap();
 
-        const promptContent = result.content || '';
+        // FIX: Access content from result.data.content
+        const promptContent = result?.data?.content || result?.content || '';
         setCurrentPrompt(promptContent);
         setOriginalPrompt(promptContent);
-        setIsOverride(result.is_override || false);
-        setLastModified(result.last_modified || null);
+        setIsOverride(result?.data?.is_override || result?.is_override || false);
+        setLastModified(result?.data?.last_modified || result?.last_modified || null);
 
         // Try to restore draft from localStorage
         const draftKey = getDraftKey();
@@ -109,6 +111,7 @@ const PromptEditorPanel = () => {
         }
       } catch (error) {
         // Error handled by Redux state
+        console.error('Failed to load prompt:', error);
       }
     };
 
@@ -158,7 +161,7 @@ const PromptEditorPanel = () => {
               domain: selectedDomain,
             })
           ).unwrap();
-          setCurrentVersions(result);
+          setCurrentVersions(result.data || result);
         } catch (error) {
           console.error('Failed to load versions:', error);
         }
@@ -193,7 +196,7 @@ const PromptEditorPanel = () => {
         })
       ).unwrap();
 
-      setCurrentVersions(result);
+      setCurrentVersions(result.data || result); 
       setSaveDialogOpen(false);
 
       // Update original prompt to reflect saved state
@@ -245,7 +248,7 @@ const PromptEditorPanel = () => {
         })
       ).unwrap();
 
-      setCurrentVersions(versionsResult);
+      setCurrentVersions(versionsResult.data || versionsResult);
 
       // Show success message
       setSnackbarMessage('Active version switched successfully!');
@@ -273,7 +276,7 @@ const PromptEditorPanel = () => {
         })
       ).unwrap();
 
-      setCurrentVersions(result);
+      setCurrentVersions(result.data || result);
 
       // Show success message
       setSnackbarMessage('Version deleted successfully!');
@@ -293,7 +296,7 @@ const PromptEditorPanel = () => {
             domain: selectedDomain,
           })
         ).unwrap();
-        setPreviewContent(result.content);
+        setPreviewContent(result?.data?.content || result?.content || '');
         setPreviewTitle('Base Prompt (Default)');
         setPreviewMetadata(null);
       } else {
@@ -305,9 +308,9 @@ const PromptEditorPanel = () => {
             filename,
           })
         ).unwrap();
-        setPreviewContent(result.content);
-        setPreviewTitle(`Version: ${result.metadata?.version_name || filename}`);
-        setPreviewMetadata(result.metadata);
+        setPreviewContent(result?.data?.content || result?.content || '');
+        setPreviewTitle(`Version: ${result?.data?.metadata?.version_name || result?.metadata?.version_name || filename}`);  // ← FIXED
+        setPreviewMetadata(result?.data?.metadata || result?.metadata || null);  // ← FIXED
       }
 
       setPreviewDialogOpen(true);
@@ -325,7 +328,7 @@ const PromptEditorPanel = () => {
         })
       ).unwrap();
 
-      setCurrentVersions(result);
+      setCurrentVersions(result.data || result);
       setSnackbarMessage('Versions refreshed!');
       setSnackbarOpen(true);
     } catch (error) {
@@ -449,63 +452,86 @@ const PromptEditorPanel = () => {
         </Alert>
       )}
 
-      <Grid container spacing={3}>
+      <PanelGroup direction="horizontal" style={{ height: 'calc(100vh - 200px)' }}>
         {/* Left Panel - Editor */}
-        <Grid item xs={12} md={8}>
-          <Stack spacing={2}>
-            <PromptSelector
-              selectedAnnotator={selectedAnnotator}
-              selectedDomain={selectedDomain}
-              onAnnotatorChange={handleAnnotatorChange}
-              onDomainChange={handleDomainChange}
-              isOverride={isOverride}
-              lastModified={lastModified}
-              loading={loading.prompts}
-            />
+        <Panel defaultSize={70} minSize={40}>
+          <Box sx={{ p: 2, height: '100%', overflow: 'auto' }}>
+            <Stack spacing={2}>
+              <PromptSelector
+                selectedAnnotator={selectedAnnotator}
+                selectedDomain={selectedDomain}
+                onAnnotatorChange={handleAnnotatorChange}
+                onDomainChange={handleDomainChange}
+                isOverride={isOverride}
+                lastModified={lastModified}
+                loading={loading.prompts}
+              />
 
-            <PromptMonacoEditor
-              value={currentPrompt}
-              onChange={handleEditorChange}
-              readOnly={loading.saving || savingVersion}
-            />
+              <PromptMonacoEditor
+                value={currentPrompt}
+                onChange={handleEditorChange}
+                readOnly={loading.saving || savingVersion}
+              />
 
-            <PromptMetadata content={currentPrompt} />
+              <PromptMetadata content={currentPrompt} />
 
-            <Box>
-              <Button
-                variant="contained"
-                color="primary"
-                disabled={!hasChanges || !isValid || savingVersion}
-                onClick={handleOpenSaveDialog}
-                fullWidth
-              >
-                💾 Save As New Version
-              </Button>
-            </Box>
+              <Box>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  disabled={!hasChanges || !isValid || savingVersion}
+                  onClick={handleOpenSaveDialog}
+                  fullWidth
+                >
+                  💾 Save As New Version
+                </Button>
+              </Box>
 
-            {hasChanges && (
-              <Alert severity="warning">
-                You have unsaved changes. Save as a new version to preserve your work!
-              </Alert>
-            )}
-          </Stack>
-        </Grid>
+              {hasChanges && (
+                <Alert severity="warning">
+                  You have unsaved changes. Save as a new version to preserve your work!
+                </Alert>
+              )}
+            </Stack>
+          </Box>
+        </Panel>
+
+        {/* Resize Handle */}
+        <PanelResizeHandle style={{
+          width: '8px',
+          background: '#ddd',
+          cursor: 'col-resize',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background 0.2s'
+        }}>
+          <div style={{
+            width: '3px',
+            height: '40px',
+            background: '#999',
+            borderRadius: '3px'
+          }} />
+        </PanelResizeHandle>
 
         {/* Right Panel - Versions */}
-        <Grid item xs={12} md={4}>
-          <PromptVersionsPanel
-            annotatorId={selectedAnnotator}
-            domain={selectedDomain}
-            versions={currentVersions}
-            activeFilename={activeVersionFilename}
-            onSelectVersion={handleSelectVersion}
-            onDeleteVersion={handleDeleteVersion}
-            onPreviewVersion={handlePreviewVersion}
-            loading={versionsLoading}
-            onRefresh={handleRefreshVersions}
-          />
-        </Grid>
-      </Grid>
+        <Panel defaultSize={30} minSize={20}>
+          <Box sx={{ p: 2, height: '100%' }}>
+            <PromptVersionsPanel
+              annotatorId={selectedAnnotator}
+              domain={selectedDomain}
+              versions={currentVersions}
+              activeFilename={activeVersionFilename}
+              onSelectVersion={handleSelectVersion}
+              onDeleteVersion={handleDeleteVersion}
+              onPreviewVersion={handlePreviewVersion}
+              loading={versionsLoading}
+              onRefresh={handleRefreshVersions}
+            />
+          </Box>
+        </Panel>
+      </PanelGroup>
 
       {/* Save Version Dialog */}
       <SaveVersionDialog

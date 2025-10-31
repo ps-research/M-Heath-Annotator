@@ -82,9 +82,9 @@ const SampleLimitSliders = () => {
     setLocalConfigs((prev) => ({
       ...prev,
       [annotatorId]: {
-        ...prev[annotatorId],
+        ...(prev[annotatorId] || {}),
         [domain]: {
-          ...prev[annotatorId][domain],
+          ...(prev[annotatorId]?.[domain] || { enabled: false, target_count: 0 }),
           enabled,
         },
       },
@@ -99,9 +99,9 @@ const SampleLimitSliders = () => {
     setLocalConfigs((prev) => ({
       ...prev,
       [annotatorId]: {
-        ...prev[annotatorId],
+        ...(prev[annotatorId] || {}),
         [domain]: {
-          ...prev[annotatorId][domain],
+          ...(prev[annotatorId]?.[domain] || { enabled: false, target_count: 0 }),
           target_count: newValue,
         },
       },
@@ -125,6 +125,11 @@ const SampleLimitSliders = () => {
 
   const handleSave = async () => {
     const promises = [];
+
+    // Guard clause: don't save if settings haven't loaded yet
+    if (!annotatorSettings || Object.keys(annotatorSettings).length === 0) {
+      return;
+    }
 
     ANNOTATOR_IDS.forEach((annotatorId) => {
       DOMAINS.forEach((domain) => {

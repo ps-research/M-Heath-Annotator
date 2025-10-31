@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.utils.file_operations import atomic_read_json, atomic_write_json
+from backend.core.dataset_loader import DatasetLoader
 
 
 class ConfigService:
@@ -449,6 +450,57 @@ class ConfigService:
 
         version_path.unlink()
         return True
+
+    def get_dataset_info(self) -> Dict[str, Any]:
+        """
+        Get information about the source dataset.
+
+        Returns:
+            Dict with dataset information including:
+                - total_rows: Number of samples in dataset
+                - file_path: Relative path to dataset file
+                - file_exists: Whether file exists
+                - last_modified: ISO timestamp of file modification
+                - file_size_mb: File size in megabytes
+
+        Raises:
+            FileNotFoundError: If dataset file doesn't exist
+            Exception: If dataset cannot be read
+        """
+        dataset_path = self.base_dir / "data" / "source" / "m_help_dataset.xlsx"
+
+        # Check if file exists
+        if not dataset_path.exists():
+            raise FileNotFoundError(
+                f"Dataset file not found at: {dataset_path}. "
+                f"Please ensure m_help_dataset.xlsx exists in data/source/ directory."
+            )
+
+        try:
+            # Initialize dataset loader
+            dataset_loader = DatasetLoader(str(dataset_path))
+
+            # Load dataset and get count
+            # This will use the cached dataset if already loaded
+            total_rows = dataset_loader.get_total_count()
+
+            # Get file metadata
+            stat = dataset_path.stat()
+
+            return {
+                "total_rows": total_rows,
+                "file_path": str(dataset_path.relative_to(self.base_dir)),
+                "file_exists": True,
+                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "file_size_mb": round(stat.st_size / (1024 * 1024), 2)
+            }
+
+        except FileNotFoundError:
+            # Re-raise FileNotFoundError as-is
+            raise
+        except Exception as e:
+            # Wrap other exceptions with context
+            raise Exception(f"Failed to read dataset: {str(e)}")
 
     def test_api_key(self, annotator_id: int, api_key: str) -> Dict[str, Any]:
         """

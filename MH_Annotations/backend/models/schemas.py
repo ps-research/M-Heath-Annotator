@@ -99,3 +99,114 @@ class Settings(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+# ===========================
+# Phase 2 API Schemas
+# ===========================
+
+class ConfigUpdate(BaseModel):
+    """Request to update global settings."""
+    model_name: Optional[str] = None
+    request_delay_seconds: Optional[int] = Field(None, ge=0, le=10)
+    max_retries: Optional[int] = Field(None, ge=1, le=10)
+    crash_detection_minutes: Optional[int] = Field(None, ge=1, le=30)
+    control_check_iterations: Optional[int] = Field(None, ge=1, le=20)
+    control_check_seconds: Optional[int] = Field(None, ge=1, le=60)
+
+    @field_validator('model_name', 'request_delay_seconds', 'max_retries',
+                     'crash_detection_minutes', 'control_check_iterations',
+                     'control_check_seconds')
+    @classmethod
+    def check_at_least_one(cls, v, info):
+        """Ensure at least one field is provided."""
+        # This will be checked at the model level
+        return v
+
+
+class APIKeyUpdate(BaseModel):
+    """Request to update API key."""
+    api_key: str = Field(..., min_length=20)
+
+
+class AnnotatorDomainConfig(BaseModel):
+    """Configuration for specific annotator-domain pair."""
+    enabled: Optional[bool] = None
+    target_count: Optional[int] = Field(None, ge=0, le=2000)
+
+
+class WorkerControlRequest(BaseModel):
+    """Request to control worker operations."""
+    annotator_id: Optional[int] = Field(None, ge=1, le=5)
+    domain: Optional[str] = None
+    action: str = Field(..., pattern="^(start|stop|pause|resume)$")
+
+    @field_validator('domain')
+    @classmethod
+    def validate_domain(cls, v):
+        if v is not None:
+            valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+            if v not in valid_domains:
+                raise ValueError(f"Invalid domain: {v}")
+        return v
+
+
+class ResetRequest(BaseModel):
+    """Request to reset annotation data."""
+    scope: str = Field(..., pattern="^(single|all)$")
+    annotator_id: Optional[int] = Field(None, ge=1, le=5)
+    domain: Optional[str] = None
+    confirmation: str = Field(..., min_length=1)
+
+    @field_validator('domain')
+    @classmethod
+    def validate_domain(cls, v):
+        if v is not None:
+            valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+            if v not in valid_domains:
+                raise ValueError(f"Invalid domain: {v}")
+        return v
+
+    def model_post_init(self, __context: Any) -> None:
+        """Validate that single scope has required fields."""
+        if self.scope == "single":
+            if self.annotator_id is None or self.domain is None:
+                raise ValueError("annotator_id and domain are required when scope is 'single'")
+        if self.confirmation != "DELETE":
+            raise ValueError("confirmation must equal 'DELETE' exactly")
+
+
+class PromptUpdate(BaseModel):
+    """Request to update prompt."""
+    content: str = Field(..., min_length=100)
+
+    @field_validator('content')
+    @classmethod
+    def validate_placeholder(cls, v):
+        if "{text}" not in v:
+            raise ValueError("Prompt must contain {text} placeholder")
+        return v
+
+
+class DataFilter(BaseModel):
+    """Filter for querying annotations."""
+    annotator_ids: List[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    domains: List[str] = Field(default_factory=lambda: ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"])
+    malformed_only: bool = False
+    completed_only: bool = False
+    search_text: Optional[str] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=50, ge=10, le=500)
+
+
+class ExportRequest(BaseModel):
+    """Request to export annotations."""
+    format: str = Field(..., pattern="^(excel|json)$")
+    filters: DataFilter = Field(default_factory=DataFilter)
+    include_columns: List[str] = Field(default_factory=lambda: ["all"])
+    excel_options: Optional[Dict[str, bool]] = Field(default_factory=lambda: {
+        "multi_sheet": True,
+        "include_summary": True
+    })

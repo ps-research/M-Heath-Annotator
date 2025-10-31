@@ -129,7 +129,7 @@ class AnnotationWorker:
 
         if override_path.exists():
             print(f"📝 Loading override prompt from {override_path}")
-            with open(override_path, 'r') as f:
+            with open(override_path, 'r', encoding='utf-8') as f:
                 return f.read()
 
         # Fall back to base prompt
@@ -141,7 +141,7 @@ class AnnotationWorker:
                 f"Please ensure prompt templates are in config/prompts/base/"
             )
 
-        with open(base_path, 'r') as f:
+        with open(base_path, 'r', encoding='utf-8') as f:
             return f.read()
 
     def get_next_sample(self) -> Optional[Dict[str, str]]:

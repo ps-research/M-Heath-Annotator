@@ -1,0 +1,12 @@
+# API Keys (sensitive data)
+config/api_keys.json
+
+# Data folder
+data/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyc

@@ -119,6 +119,9 @@ export const configAPI = {
     api.delete(`/api/config/prompts/${annotatorId}/${domain}/versions/${filename}`),
   getVersionContent: (annotatorId, domain, filename) =>
     api.get(`/api/config/prompts/${annotatorId}/${domain}/versions/${filename}`),
+
+  // Dataset Info
+  getDatasetInfo: () => api.get('/api/config/dataset/info'),
 };
 
 // Control API

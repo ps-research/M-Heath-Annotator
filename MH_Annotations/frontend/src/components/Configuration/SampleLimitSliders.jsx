@@ -27,6 +27,8 @@ import {
   selectAnnotatorSettings,
   selectIsLoading,
   selectErrors,
+  fetchDatasetInfo,
+  selectDatasetInfo,
 } from '../../store/slices/configSlice';
 import { ANNOTATOR_IDS, DOMAINS, DOMAIN_NAMES, SAMPLE_LIMIT } from '../../utils/constants';
 
@@ -35,9 +37,19 @@ const SampleLimitSliders = () => {
   const annotatorSettings = useSelector(selectAnnotatorSettings);
   const loading = useSelector(selectIsLoading);
   const errors = useSelector(selectErrors);
+  const datasetInfo = useSelector(selectDatasetInfo);
 
   const [localConfigs, setLocalConfigs] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Fetch dataset info on mount
+  useEffect(() => {
+    dispatch(fetchDatasetInfo());
+  }, [dispatch]);
+
+  // Calculate dynamic max value based on actual dataset size
+  const actualDatasetSize = datasetInfo?.data?.total_rows || SAMPLE_LIMIT.MAX;
+  const dynamicMax = actualDatasetSize;
 
   // Initialize local state from Redux
   useEffect(() => {
@@ -93,7 +105,7 @@ const SampleLimitSliders = () => {
 
   const handleTargetCountChange = (annotatorId, domain, value) => {
     // Ensure value is within bounds and a multiple of 5
-    let newValue = Math.max(SAMPLE_LIMIT.MIN, Math.min(SAMPLE_LIMIT.MAX, value));
+    let newValue = Math.max(SAMPLE_LIMIT.MIN, Math.min(dynamicMax, value));
     newValue = Math.round(newValue / SAMPLE_LIMIT.STEP) * SAMPLE_LIMIT.STEP;
 
     setLocalConfigs((prev) => ({
@@ -158,7 +170,7 @@ const SampleLimitSliders = () => {
   };
 
   const totalAcrossAll = calculateGrandTotal();
-  const maxPossible = ANNOTATOR_IDS.length * DOMAINS.length * SAMPLE_LIMIT.MAX;
+  const maxPossible = ANNOTATOR_IDS.length * DOMAINS.length * dynamicMax;
 
   return (
     <Card sx={{ mb: 3 }}>
@@ -166,14 +178,37 @@ const SampleLimitSliders = () => {
         <Typography variant="h6" gutterBottom>
           Sample Limits
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Configure target sample counts for each annotator-domain combination
         </Typography>
+
+        {/* Dataset Info Display */}
+        {datasetInfo.loading && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <CircularProgress size={16} />
+            <Typography variant="caption" color="text.secondary">
+              Loading dataset information...
+            </Typography>
+          </Box>
+        )}
+
+        {datasetInfo.error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Failed to load dataset info: {datasetInfo.error}
+          </Alert>
+        )}
+
+        {datasetInfo.data && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            <strong>Dataset:</strong> {datasetInfo.data.total_rows.toLocaleString()} total samples available
+            {datasetInfo.data.file_size_mb && ` (${datasetInfo.data.file_size_mb} MB)`}
+          </Alert>
+        )}
 
         <Stack spacing={2}>
           {ANNOTATOR_IDS.map((annotatorId) => {
             const annotatorTotal = calculateAnnotatorTotal(annotatorId);
-            const maxForAnnotator = DOMAINS.length * SAMPLE_LIMIT.MAX;
+            const maxForAnnotator = DOMAINS.length * dynamicMax;
 
             return (
               <Accordion key={annotatorId}>
@@ -234,14 +269,14 @@ const SampleLimitSliders = () => {
                               }
                               disabled={!config.enabled}
                               min={SAMPLE_LIMIT.MIN}
-                              max={SAMPLE_LIMIT.MAX}
+                              max={dynamicMax}
                               step={SAMPLE_LIMIT.STEP}
                               marks={[
                                 { value: 0, label: '0' },
-                                { value: 500, label: '500' },
-                                { value: 1000, label: '1000' },
-                                { value: 1500, label: '1500' },
-                                { value: 2000, label: '2000' },
+                                { value: Math.floor(dynamicMax * 0.25), label: Math.floor(dynamicMax * 0.25).toString() },
+                                { value: Math.floor(dynamicMax * 0.5), label: Math.floor(dynamicMax * 0.5).toString() },
+                                { value: Math.floor(dynamicMax * 0.75), label: Math.floor(dynamicMax * 0.75).toString() },
+                                { value: dynamicMax, label: dynamicMax.toString() },
                               ]}
                               valueLabelDisplay="auto"
                               sx={{ flexGrow: 1 }}
@@ -262,15 +297,15 @@ const SampleLimitSliders = () => {
                               InputProps={{
                                 inputProps: {
                                   min: SAMPLE_LIMIT.MIN,
-                                  max: SAMPLE_LIMIT.MAX,
+                                  max: dynamicMax,
                                   step: SAMPLE_LIMIT.STEP,
                                 },
                               }}
                             />
                           </Stack>
-                          {config.enabled && config.target_count > 2000 && (
-                            <Alert severity="warning" sx={{ mt: 1, ml: 4 }}>
-                              Warning: Target count exceeds typical dataset size (2000)
+                          {config.enabled && config.target_count > dynamicMax && (
+                            <Alert severity="error" sx={{ mt: 1, ml: 4 }}>
+                              Error: Target count ({config.target_count}) exceeds actual dataset size ({dynamicMax})
                             </Alert>
                           )}
                         </Box>

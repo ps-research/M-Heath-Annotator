@@ -50,6 +50,22 @@ async def update_settings(updates: ConfigUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/dataset/info")
+async def get_dataset_info():
+    """Get dataset information including row count."""
+    try:
+        dataset_info = config_service.get_dataset_info()
+        return APIResponse(
+            success=True,
+            data=dataset_info,
+            message="Dataset information retrieved successfully"
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api-keys")
 async def get_api_keys():
     """Get all API keys (unmasked for frontend display)."""

@@ -25,6 +25,11 @@ const initialState = {
     data: {}, // Structure: [annotator_id_domain] = {base, versions[]}
   },
   activeVersions: {}, // {annotator_1: {urgency: "v2_...", ...}, ...}
+  datasetInfo: {
+    loading: false,
+    error: null,
+    data: null, // Will contain { total_rows, file_path, etc. }
+  },
   loading: {
     settings: false,
     apiKeys: false,
@@ -222,6 +227,18 @@ export const fetchVersionContent = createAsyncThunk(
   async ({ annotatorId, domain, filename }, { rejectWithValue }) => {
     try {
       const data = await configAPI.getVersionContent(annotatorId, domain, filename);
+      return data;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const fetchDatasetInfo = createAsyncThunk(
+  'config/fetchDatasetInfo',
+  async (_, { rejectWithValue }) => {
+    try {
+      const data = await configAPI.getDatasetInfo();
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -444,6 +461,21 @@ const configSlice = createSlice({
         state.loading.saving = false;
         state.errors.promptVersions = action.payload;
       });
+
+    // Fetch Dataset Info
+    builder
+      .addCase(fetchDatasetInfo.pending, (state) => {
+        state.datasetInfo.loading = true;
+        state.datasetInfo.error = null;
+      })
+      .addCase(fetchDatasetInfo.fulfilled, (state, action) => {
+        state.datasetInfo.loading = false;
+        state.datasetInfo.data = action.payload?.data || action.payload;
+      })
+      .addCase(fetchDatasetInfo.rejected, (state, action) => {
+        state.datasetInfo.loading = false;
+        state.datasetInfo.error = action.payload;
+      });
   },
 });
 
@@ -477,5 +509,8 @@ export const selectActiveVersionFilename = (annotatorId, domain) => (state) =>
   state.config.activeVersions[`annotator_${annotatorId}`]?.[domain] || null;
 export const selectPromptVersionsLoading = (state) => state.config.promptVersions.loading;
 export const selectSavingVersion = (state) => state.config.loading.savingVersion;
+
+// Dataset Info Selectors
+export const selectDatasetInfo = (state) => state.config.datasetInfo;
 
 export default configSlice.reducer;

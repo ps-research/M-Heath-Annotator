@@ -78,7 +78,7 @@ class WorkerStatus(BaseModel):
 
 class GlobalSettings(BaseModel):
     """Global configuration settings."""
-    model_name: str = "gemini-2.0-flash-exp"
+    model_name: str = "gemma-3-27b-it"
     request_delay_seconds: int = 1
     max_retries: int = 3
     crash_detection_minutes: int = 5
@@ -126,13 +126,13 @@ class ConfigUpdate(BaseModel):
 
 class APIKeyUpdate(BaseModel):
     """Request to update API key."""
-    api_key: Optional[str] = Field(None)  # Allow None for deletion
-    
+    api_key: Optional[str] = Field(None)  # Allow None or empty string for deletion
+
     @field_validator('api_key')
     @classmethod
     def validate_api_key(cls, v):
-        # If provided and not None, must be at least 20 chars
-        if v is not None and len(v) < 20:
+        # If provided (not None and not empty), must be at least 20 chars
+        if v and len(v) < 20:
             raise ValueError('API key must be at least 20 characters')
         return v
 

@@ -5,7 +5,7 @@ import { configAPI } from '../../services/api';
 const initialState = {
   settings: {
     global: {
-      model_name: 'gemini-2.0-flash-exp',
+      model_name: 'gemma-3-27b-it',
       request_delay_seconds: 1,
       max_retries: 3,
       crash_detection_minutes: 5,

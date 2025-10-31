@@ -57,9 +57,7 @@ export const WS_EVENTS = {
 
 // Model options
 export const MODEL_OPTIONS = [
-  'gemini-2.0-flash-exp',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
+  'gemma-3-27b-it',
 ];
 
 // Sample limit constraints

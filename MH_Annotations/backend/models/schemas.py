@@ -210,3 +210,42 @@ class ExportRequest(BaseModel):
         "multi_sheet": True,
         "include_summary": True
     })
+
+
+# ===========================
+# Phase 3 - Version Management Schemas
+# ===========================
+
+class PromptVersionCreate(BaseModel):
+    """Request to create a new prompt version."""
+    version_name: str = Field(..., min_length=1, max_length=50)
+    content: str = Field(..., min_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+
+    @field_validator('version_name')
+    @classmethod
+    def validate_version_name(cls, v):
+        import re
+        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+            raise ValueError('Version name must contain only letters, numbers, and underscores')
+        return v
+
+    @field_validator('content')
+    @classmethod
+    def validate_placeholder(cls, v):
+        if '{text}' not in v:
+            raise ValueError('Prompt must contain {text} placeholder')
+        return v
+
+
+class ActiveVersionUpdate(BaseModel):
+    """Request to set active version."""
+    filename: Optional[str] = None  # Can be None to revert to base
+
+    @field_validator('filename')
+    @classmethod
+    def validate_filename(cls, v):
+        if v is not None:
+            if not v.startswith('v') or not v.endswith('.txt'):
+                raise ValueError('Invalid filename format')
+        return v

@@ -99,6 +99,24 @@ export const configAPI = {
     api.get(`/api/config/annotators/${annotatorId}/${domain}`),
   updateDomainConfig: (annotatorId, domain, config) =>
     api.put(`/api/config/annotators/${annotatorId}/${domain}`, config),
+
+  // Phase 3 - Version Management
+  savePromptVersion: (annotatorId, domain, versionName, content, description) =>
+    api.post(`/api/config/prompts/${annotatorId}/${domain}/versions`, {
+      version_name: versionName,
+      content,
+      description,
+    }),
+  getPromptVersions: (annotatorId, domain) =>
+    api.get(`/api/config/prompts/${annotatorId}/${domain}/versions`),
+  setActiveVersion: (annotatorId, domain, filename) =>
+    api.put(`/api/config/prompts/${annotatorId}/${domain}/active-version`, {
+      filename,
+    }),
+  deletePromptVersion: (annotatorId, domain, filename) =>
+    api.delete(`/api/config/prompts/${annotatorId}/${domain}/versions/${filename}`),
+  getVersionContent: (annotatorId, domain, filename) =>
+    api.get(`/api/config/prompts/${annotatorId}/${domain}/versions/${filename}`),
 };
 
 // Control API

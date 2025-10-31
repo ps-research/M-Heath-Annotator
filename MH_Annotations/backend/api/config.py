@@ -9,7 +9,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from backend.models.schemas import ConfigUpdate, APIKeyUpdate, AnnotatorDomainConfig, PromptUpdate
+from backend.models.schemas import (
+    ConfigUpdate, APIKeyUpdate, AnnotatorDomainConfig, PromptUpdate,
+    PromptVersionCreate, ActiveVersionUpdate
+)
 from backend.models.responses import APIResponse
 from backend.services.config_service import ConfigService
 
@@ -175,11 +178,11 @@ async def delete_prompt(annotator_id: int, domain: str):
     """Delete prompt override (revert to base)."""
     if annotator_id < 1 or annotator_id > 5:
         raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
-    
+
     valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
     if domain not in valid_domains:
         raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
-    
+
     try:
         config_service.delete_prompt_override(annotator_id, domain)
         return APIResponse(
@@ -187,6 +190,121 @@ async def delete_prompt(annotator_id: int, domain: str):
             data={"annotator_id": annotator_id, "domain": domain},
             message="Prompt override deleted. Will now use base prompt."
         )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===========================
+# Phase 3 - Version Management Endpoints
+# ===========================
+
+@router.post("/prompts/{annotator_id}/{domain}/versions")
+async def save_prompt_version(annotator_id: int, domain: str, version_data: PromptVersionCreate):
+    """Save a new prompt version."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+    if domain not in valid_domains:
+        raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
+
+    try:
+        result = config_service.save_prompt_version(
+            annotator_id,
+            domain,
+            version_data.version_name,
+            version_data.content,
+            version_data.description
+        )
+        return APIResponse(
+            success=True,
+            data=result,
+            message="Prompt version saved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/prompts/{annotator_id}/{domain}/versions")
+async def list_prompt_versions(annotator_id: int, domain: str):
+    """List all prompt versions for annotator-domain."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+    if domain not in valid_domains:
+        raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
+
+    try:
+        versions = config_service.list_prompt_versions(annotator_id, domain)
+        return APIResponse(success=True, data=versions)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/prompts/{annotator_id}/{domain}/active-version")
+async def set_active_version(annotator_id: int, domain: str, update: ActiveVersionUpdate):
+    """Set the active prompt version for annotator-domain."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+    if domain not in valid_domains:
+        raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
+
+    try:
+        result = config_service.set_active_version(annotator_id, domain, update.filename)
+        return APIResponse(
+            success=True,
+            data=result,
+            message="Active version updated successfully"
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/prompts/{annotator_id}/{domain}/versions/{filename}")
+async def delete_prompt_version(annotator_id: int, domain: str, filename: str):
+    """Delete a specific prompt version."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+    if domain not in valid_domains:
+        raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
+
+    try:
+        config_service.delete_prompt_version(annotator_id, domain, filename)
+        return APIResponse(
+            success=True,
+            data={"annotator_id": annotator_id, "domain": domain, "filename": filename},
+            message="Version deleted successfully"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/prompts/{annotator_id}/{domain}/versions/{filename}")
+async def get_version_content(annotator_id: int, domain: str, filename: str):
+    """Get full content of a specific prompt version."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+    if domain not in valid_domains:
+        raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
+
+    try:
+        version_content = config_service.get_version_content(annotator_id, domain, filename)
+        return APIResponse(success=True, data=version_content)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

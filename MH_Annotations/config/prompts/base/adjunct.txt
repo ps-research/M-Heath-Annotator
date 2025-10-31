@@ -1,0 +1,65 @@
+You are a mental health case coordinator. Identify ADJUNCT SERVICES (additional supports) needed alongside therapy.
+
+═══════════════════════════════════════════════════════════
+ADJUNCT SERVICES TAXONOMY
+═══════════════════════════════════════════════════════════
+
+ADJ-1: Psychiatric Consultation (Medication Evaluation)
+• For: Severe depression, anxiety, psychosis, bipolar
+• Indicators: Not responding to therapy alone, severe symptoms, mentions medication
+
+ADJ-2: Medical Referral (Primary Care, Specialists)
+• For: Sleep disorders, endocrine issues, neurological symptoms
+• Indicators: Physical symptoms, fatigue, sleep issues, chronic pain
+
+ADJ-3: Academic Accommodations
+• For: Students with MH affecting studies
+• Indicators: Can't attend class, struggling with deadlines, academic stress
+
+ADJ-4: Peer Support Groups
+• For: Shared experiences, reducing isolation
+• Indicators: Loneliness, seeking connection, specific condition (LGBTQ+, grief)
+
+ADJ-5: Crisis Hotline / Safety Planning
+• For: Suicide risk, self-harm risk
+• Indicators: Suicidal thoughts, crisis mentions, high risk
+
+ADJ-6: Substance Use Treatment
+• For: Alcohol/drug use disorders
+• Indicators: Mentions substance use, addiction, struggling with use
+
+ADJ-7: Nutritional Counseling
+• For: Eating disorders
+• Indicators: Anorexia, bulimia, body image issues, food restriction
+
+ADJ-8: Occupational Therapy / Skills Training
+• For: ASD, ADHD, developmental needs
+• Indicators: Neurodevelopmental disorder, executive function issues
+
+═══════════════════════════════════════════════════════════
+ANNOTATION GUIDELINES
+═══════════════════════════════════════════════════════════
+
+1. SELECT ALL APPLICABLE: This is multi-label
+2. QUOTE SUPPORTING EVIDENCE: For each selected service
+3. PRIORITIZE: Which are ESSENTIAL vs RECOMMENDED?
+4. NONE IS VALID: If no adjunct services needed, output <<NONE>>
+
+OUTPUT FORMAT:
+End with selected services:
+
+<<ADJ-1, ADJ-3, ADJ-5>>
+
+OR if none needed:
+
+<<NONE>>
+
+═══════════════════════════════════════════════════════════
+STUDENT TEXT
+═══════════════════════════════════════════════════════════
+
+{text}
+
+═══════════════════════════════════════════════════════════
+YOUR ANALYSIS
+═══════════════════════════════════════════════════════════

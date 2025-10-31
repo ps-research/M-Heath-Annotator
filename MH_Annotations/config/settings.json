@@ -1,0 +1,52 @@
+{
+  "global": {
+    "model_name": "gemini-2.0-flash-exp",
+    "request_delay_seconds": 1,
+    "max_retries": 3,
+    "crash_detection_minutes": 5,
+    "control_check_iterations": 5,
+    "control_check_seconds": 10
+  },
+  "annotators": {
+    "1": {
+      "urgency": {"enabled": true, "target_count": 500},
+      "therapeutic": {"enabled": true, "target_count": 500},
+      "intensity": {"enabled": true, "target_count": 500},
+      "adjunct": {"enabled": true, "target_count": 500},
+      "modality": {"enabled": true, "target_count": 500},
+      "redressal": {"enabled": true, "target_count": 500}
+    },
+    "2": {
+      "urgency": {"enabled": true, "target_count": 500},
+      "therapeutic": {"enabled": true, "target_count": 500},
+      "intensity": {"enabled": true, "target_count": 500},
+      "adjunct": {"enabled": true, "target_count": 500},
+      "modality": {"enabled": true, "target_count": 500},
+      "redressal": {"enabled": true, "target_count": 500}
+    },
+    "3": {
+      "urgency": {"enabled": false, "target_count": 0},
+      "therapeutic": {"enabled": false, "target_count": 0},
+      "intensity": {"enabled": false, "target_count": 0},
+      "adjunct": {"enabled": false, "target_count": 0},
+      "modality": {"enabled": false, "target_count": 0},
+      "redressal": {"enabled": false, "target_count": 0}
+    },
+    "4": {
+      "urgency": {"enabled": false, "target_count": 0},
+      "therapeutic": {"enabled": false, "target_count": 0},
+      "intensity": {"enabled": false, "target_count": 0},
+      "adjunct": {"enabled": false, "target_count": 0},
+      "modality": {"enabled": false, "target_count": 0},
+      "redressal": {"enabled": false, "target_count": 0}
+    },
+    "5": {
+      "urgency": {"enabled": false, "target_count": 0},
+      "therapeutic": {"enabled": false, "target_count": 0},
+      "intensity": {"enabled": false, "target_count": 0},
+      "adjunct": {"enabled": false, "target_count": 0},
+      "modality": {"enabled": false, "target_count": 0},
+      "redressal": {"enabled": false, "target_count": 0}
+    }
+  }
+}

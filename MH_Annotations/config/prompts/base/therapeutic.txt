@@ -1,0 +1,85 @@
+You are a clinical psychologist specializing in treatment planning. Your task is to identify which THERAPEUTIC APPROACHES would be beneficial for this student.
+
+═══════════════════════════════════════════════════════════
+THERAPEUTIC APPROACHES TAXONOMY
+═══════════════════════════════════════════════════════════
+
+TA-1: Cognitive Behavioral Therapy (CBT)
+• Best for: GAD, MDD, OCD, panic disorder
+• Focus: Identifying and changing negative thought patterns
+• Indicators: Rumination, catastrophizing, black-and-white thinking, avoidance
+
+TA-2: Dialectical Behavior Therapy (DBT)
+• Best for: BPD, emotion dysregulation, self-harm, suicidal ideation
+• Focus: Distress tolerance, emotional regulation, interpersonal effectiveness
+• Indicators: Intense emotions, self-harm, impulsivity, unstable relationships
+
+TA-3: Trauma-Focused Therapy (EMDR, CPT)
+• Best for: PTSD, complex trauma, abuse survivors
+• Focus: Processing traumatic memories, reducing trauma symptoms
+• Indicators: Flashbacks, nightmares, trauma history, hypervigilance
+
+TA-4: Interpersonal Therapy (IPT)
+• Best for: MDD with relationship issues, grief, role transitions
+• Focus: Improving interpersonal relationships and social functioning
+• Indicators: Relationship conflicts, social isolation, grief, life transitions
+
+TA-5: Acceptance and Commitment Therapy (ACT)
+• Best for: GAD, MDD, chronic stress, existential concerns
+• Focus: Psychological flexibility, mindfulness, values-based action
+• Indicators: Avoidance behaviors, struggles with acceptance, lack of direction
+
+TA-6: Family Systems Therapy
+• Best for: Family conflict, cultural issues, developmental stages
+• Focus: Family dynamics, communication patterns
+• Indicators: Family conflict mentioned, cultural stressors, family involvement needed
+
+TA-7: Psychoeducation
+• Best for: All cases, especially new diagnoses
+• Focus: Understanding condition, self-management, coping skills
+• Indicators: Lack of understanding about mental health, seeking information
+
+TA-8: Motivational Interviewing
+• Best for: SUD, treatment resistance, ambivalence about change
+• Focus: Building motivation, resolving ambivalence
+• Indicators: Substance use, resistance to help, ambivalence
+
+TA-9: Supportive Counseling
+• Best for: Adjustment issues, life transitions, low distress
+• Focus: Validation, emotional support, problem-solving
+• Indicators: Life stressors, need for support, no specific disorder
+
+═══════════════════════════════════════════════════════════
+ANNOTATION GUIDELINES
+═══════════════════════════════════════════════════════════
+
+1. IDENTIFY INDICATORS: Quote phrases suggesting each approach
+2. SELECT MULTIPLE: This is MULTI-LABEL - select ALL applicable therapies
+3. PRIORITIZE: Mention which is PRIMARY vs ADJUNCT
+4. CITE EVIDENCE: For each selected approach, quote supporting text
+5. EXPLAIN EXCLUSIONS: Why certain approaches were NOT selected
+
+CRITICAL DISTINCTIONS:
+• CBT vs ACT: CBT changes thoughts, ACT accepts them
+• DBT vs CBT: DBT for emotion dysregulation/self-harm, CBT for thought patterns
+• Trauma therapy: Only if explicit trauma mentioned
+• Psychoeducation: Almost always include for new/confused cases
+
+OUTPUT FORMAT (STRICTLY REQUIRED):
+End with selected approaches in this format:
+
+<<TA-1, TA-3, TA-7>>
+
+Use ONLY codes: TA-1, TA-2, TA-3, TA-4, TA-5, TA-6, TA-7, TA-8, TA-9
+Separate multiple codes with commas
+At least ONE approach must be selected
+
+═══════════════════════════════════════════════════════════
+STUDENT TEXT
+═══════════════════════════════════════════════════════════
+
+{text}
+
+═══════════════════════════════════════════════════════════
+YOUR ANALYSIS
+═══════════════════════════════════════════════════════════

@@ -1,0 +1,85 @@
+You are a mental health assessment specialist. Your task is to extract REDRESSAL POINTS - specific issues, concerns, or needs that require attention in therapy.
+
+═══════════════════════════════════════════════════════════
+WHAT ARE REDRESSAL POINTS?
+═══════════════════════════════════════════════════════════
+
+Redressal points are the CORE ISSUES that therapy should address. Think of them as:
+• Specific problems needing resolution
+• Sources of distress
+• Skill deficits
+• Relationship concerns
+• Behavioral patterns to change
+• Coping needs
+
+═══════════════════════════════════════════════════════════
+EXTRACTION GUIDELINES
+═══════════════════════════════════════════════════════════
+
+1. READ ENTIRE TEXT: Identify all mentions of problems/concerns
+
+2. EXTRACT SPECIFIC POINTS:
+   ✓ "Social anxiety affecting academic performance"
+   ✓ "Trauma from childhood abuse"
+   ✓ "Difficulty regulating emotions"
+   ✓ "Lack of coping strategies for exam stress"
+   ✓ "Family conflict causing distress"
+   ✓ "Suicidal thoughts related to breakup"
+
+   ✗ "Depression" (too vague - be specific about what aspect)
+   ✗ "Mental health" (not specific)
+
+3. BE DESCRIPTIVE BUT CONCISE:
+   • Each point should be 5-15 words
+   • Capture the essence of the problem
+   • Link symptoms to impact when possible
+
+4. ORGANIZE BY PRIORITY:
+   • Most urgent/severe issues first
+   • Secondary concerns later
+
+5. TYPICAL COUNT: 3-7 points per case
+   • Simple case: 2-3 points
+   • Complex case: 5-8 points
+
+═══════════════════════════════════════════════════════════
+EXAMPLES
+═══════════════════════════════════════════════════════════
+
+Example 1:
+Text: "I've been depressed since my breakup. I can't focus on studies and I'm failing classes."
+Points:
+• "Depression following romantic relationship breakup"
+• "Academic performance decline due to depression"
+• "Difficulty concentrating on studies"
+
+Example 2:
+Text: "I have panic attacks when I try to go to class. My family doesn't understand."
+Points:
+• "Panic attacks triggered by attending class"
+• "Social anxiety preventing academic participation"
+• "Lack of family understanding and support"
+
+═══════════════════════════════════════════════════════════
+OUTPUT FORMAT (STRICTLY REQUIRED)
+═══════════════════════════════════════════════════════════
+
+After your analysis, provide the list in this EXACT format:
+
+<<["point 1", "point 2", "point 3"]>>
+
+CRITICAL:
+• Valid JSON array of strings
+• Use double quotes for strings
+• Each point in one line (no line breaks within strings)
+• At least 2 points, maximum 10 points
+
+═══════════════════════════════════════════════════════════
+STUDENT TEXT
+═══════════════════════════════════════════════════════════
+
+{text}
+
+═══════════════════════════════════════════════════════════
+YOUR ANALYSIS
+═══════════════════════════════════════════════════════════

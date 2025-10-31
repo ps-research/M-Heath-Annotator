@@ -29,7 +29,7 @@ import {
 import { MODEL_OPTIONS } from '../../utils/constants';
 
 const DEFAULT_SETTINGS = {
-  model_name: 'gemini-2.0-flash-exp',
+  model_name: 'gemma-3-27b-it',
   request_delay_seconds: 1,
   max_retries: 3,
   crash_detection_minutes: 5,
@@ -38,9 +38,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const MODEL_DESCRIPTIONS = {
-  'gemini-2.0-flash-exp': 'Gemini 2.0 Flash (Experimental) - Latest model with enhanced performance',
-  'gemini-1.5-flash': 'Gemini 1.5 Flash - Fast and efficient for most tasks',
-  'gemini-1.5-pro': 'Gemini 1.5 Pro - Most capable model for complex tasks',
+  'gemma-3-27b-it': 'Gemma 3 27B IT - Instruction-tuned model for annotation tasks',
 };
 
 const GlobalSettings = () => {

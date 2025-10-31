@@ -52,9 +52,9 @@ async def update_settings(updates: ConfigUpdate):
 
 @router.get("/api-keys")
 async def get_api_keys():
-    """Get all API keys (masked)."""
+    """Get all API keys (unmasked for frontend display)."""
     try:
-        keys = config_service.get_api_keys(masked=True)
+        keys = config_service.get_api_keys(masked=False)
         return APIResponse(success=True, data=keys, message="API keys retrieved successfully")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

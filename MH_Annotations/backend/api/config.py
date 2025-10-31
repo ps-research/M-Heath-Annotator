@@ -65,14 +65,14 @@ async def update_api_key(annotator_id: int, key_update: APIKeyUpdate):
     """Update API key for specific annotator."""
     if annotator_id < 1 or annotator_id > 5:
         raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
-    
+
     try:
         # Treat None or empty string as deletion
         api_key_value = key_update.api_key if key_update.api_key else ""
         config_service.update_api_key(annotator_id, api_key_value)
-        
+
         message = f"API key deleted for annotator {annotator_id}" if not api_key_value else f"API key updated for annotator {annotator_id}"
-        
+
         return APIResponse(
             success=True,
             data={"annotator_id": annotator_id},
@@ -80,6 +80,33 @@ async def update_api_key(annotator_id: int, key_update: APIKeyUpdate):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test-api-key/{annotator_id}")
+async def test_api_key(annotator_id: int, key_update: APIKeyUpdate):
+    """Test API key against Google Gemini API."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    # Validate API key is provided
+    if not key_update.api_key or len(key_update.api_key) < 20:
+        raise HTTPException(status_code=400, detail="API key must be at least 20 characters")
+
+    try:
+        # Test the API key
+        result = config_service.test_api_key(annotator_id, key_update.api_key)
+
+        return APIResponse(
+            success=result["success"],
+            data={
+                "annotator_id": annotator_id,
+                "valid": result["success"],
+                "error_details": result.get("error_details")
+            },
+            message=result["message"]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test failed: {str(e)}")
 
 
 @router.get("/annotators/{annotator_id}/domains/{domain}")

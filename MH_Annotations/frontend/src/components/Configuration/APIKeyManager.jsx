@@ -29,6 +29,7 @@ import {
   selectErrors,
 } from '../../store/slices/configSlice';
 import { ANNOTATOR_IDS } from '../../utils/constants';
+import { configAPI } from '../../services/api';
 
 const APIKeyManager = () => {
   const dispatch = useDispatch();
@@ -129,21 +130,36 @@ const APIKeyManager = () => {
 
     setTesting((prev) => ({ ...prev, [annotatorId]: true }));
 
-    // Simulate API test - in production, this would call a backend endpoint
-    // that tests the key against Google Gemini API
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Make real API call to test the key against Gemini API
+      const result = await configAPI.testAPIKey(annotatorId, key);
 
-      // For now, we just validate format
-      // In production: await configAPI.testAPIKey(annotatorId, key);
-      setValidation((prev) => ({
-        ...prev,
-        [annotatorId]: { valid: true, message: 'API key format valid' },
-      }));
+      // Handle response
+      if (result.success && result.data.valid) {
+        setValidation((prev) => ({
+          ...prev,
+          [annotatorId]: {
+            valid: true,
+            message: result.message || 'API key is valid and working!',
+          },
+        }));
+      } else {
+        setValidation((prev) => ({
+          ...prev,
+          [annotatorId]: {
+            valid: false,
+            message: result.message || 'API key test failed',
+            details: result.data?.error_details,
+          },
+        }));
+      }
     } catch (error) {
       setValidation((prev) => ({
         ...prev,
-        [annotatorId]: { valid: false, message: error.message || 'Test failed' },
+        [annotatorId]: {
+          valid: false,
+          message: error.message || 'Test failed - network error',
+        },
       }));
     } finally {
       setTesting((prev) => ({ ...prev, [annotatorId]: false }));
@@ -282,7 +298,7 @@ const APIKeyManager = () => {
                     ) : null
                   }
                 >
-                  Test
+                  {testing[id] ? 'Testing...' : 'Test'}
                 </Button>
                 {validation[id] && (
                   <Chip

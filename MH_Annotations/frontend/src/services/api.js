@@ -86,6 +86,8 @@ export const configAPI = {
   getAPIKeys: () => api.get('/api/config/api-keys'),
   updateAPIKey: (annotatorId, apiKey) =>
     api.put(`/api/config/api-keys/${annotatorId}`, { api_key: apiKey }),
+  testAPIKey: (annotatorId, apiKey) =>
+    api.post(`/api/config/test-api-key/${annotatorId}`, { api_key: apiKey }),
 
   getPrompts: () => api.get('/api/config/prompts'),
   getPrompt: (annotatorId, domain) =>

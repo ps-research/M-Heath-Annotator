@@ -449,3 +449,110 @@ class ConfigService:
 
         version_path.unlink()
         return True
+
+    def test_api_key(self, annotator_id: int, api_key: str) -> Dict[str, Any]:
+        """
+        Test API key by making a real call to Google Gemini API.
+
+        Args:
+            annotator_id: Annotator ID (for logging/context)
+            api_key: The API key to test
+
+        Returns:
+            Dict with:
+                - success: bool - Whether the key is valid
+                - message: str - User-friendly message
+                - error_details: Optional[str] - Technical error details
+        """
+        from google import genai
+        from google.genai import types
+
+        # Get model name from settings
+        try:
+            settings = self.get_settings()
+            model_name = settings.get("global", {}).get("model_name", "gemma-3-27b-it")
+        except:
+            model_name = "gemma-3-27b-it"
+
+        try:
+            # Initialize Gemini client with the API key
+            client = genai.Client(api_key=api_key)
+
+            # Create minimal test request
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text="Hi")]
+                )
+            ]
+
+            config = types.GenerateContentConfig()
+
+            # Make a test API call with timeout
+            # We use generate_content (non-streaming) for faster testing
+            response_text = ""
+            try:
+                # Use streaming but only collect first chunk for speed
+                chunk_count = 0
+                for chunk in client.models.generate_content_stream(
+                    model=model_name,
+                    contents=contents,
+                    config=config
+                ):
+                    if chunk.text:
+                        response_text += chunk.text
+                        chunk_count += 1
+                        # Only need one chunk to verify key works
+                        if chunk_count >= 1:
+                            break
+            except StopIteration:
+                pass  # No more chunks, which is fine
+
+            # If we got here without exception, the key is valid
+            return {
+                "success": True,
+                "message": f"API key is valid! Successfully connected to Gemini API with model '{model_name}'",
+                "error_details": None
+            }
+
+        except Exception as e:
+            error_str = str(e).lower()
+
+            # Check for invalid API key errors (401/403)
+            if "403" in error_str or "401" in error_str or "api key" in error_str or "permission" in error_str or "unauthorized" in error_str:
+                return {
+                    "success": False,
+                    "message": "Invalid API key - please check the key and try again",
+                    "error_details": str(e)
+                }
+
+            # Check for rate limit errors (429)
+            if "429" in error_str or "quota" in error_str or "rate limit" in error_str:
+                return {
+                    "success": False,
+                    "message": "Rate limit exceeded - please try again later",
+                    "error_details": str(e)
+                }
+
+            # Check for model access errors
+            if "model" in error_str and ("not found" in error_str or "not available" in error_str or "not accessible" in error_str):
+                return {
+                    "success": False,
+                    "message": f"Model '{model_name}' not accessible with this key - check your API key permissions",
+                    "error_details": str(e)
+                }
+
+            # Check for timeout errors
+            if "timeout" in error_str or "timed out" in error_str:
+                return {
+                    "success": False,
+                    "message": "Request timeout - please check your internet connection",
+                    "error_details": str(e)
+                }
+
+            # Generic API error
+            return {
+                "success": False,
+                "message": f"API test failed: {str(e)}",
+                "error_details": str(e)
+            }

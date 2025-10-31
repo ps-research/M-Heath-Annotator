@@ -1,59 +1,66 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Box, Typography, Paper, Button } from '@mui/material';
+import { Box, Typography, Button, Stack } from '@mui/material';
+import { Save as SaveIcon } from '@mui/icons-material';
 import {
   fetchSettings,
   fetchAPIKeys,
-  selectSettings,
-  selectAPIKeys,
   selectIsLoading,
 } from '../../store/slices/configSlice';
-import { LoadingSpinner } from '../Common';
+import { LoadingSpinner, ErrorAlert } from '../Common';
+import APIKeyManager from './APIKeyManager';
+import GlobalSettings from './GlobalSettings';
+import SampleLimitSliders from './SampleLimitSliders';
 
 const ConfigurationPanel = () => {
   const dispatch = useDispatch();
-  const settings = useSelector(selectSettings);
-  const apiKeys = useSelector(selectAPIKeys);
   const loading = useSelector(selectIsLoading);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   useEffect(() => {
-    dispatch(fetchSettings());
-    dispatch(fetchAPIKeys());
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          dispatch(fetchSettings()),
+          dispatch(fetchAPIKeys()),
+        ]);
+        setInitialLoadComplete(true);
+      } catch (error) {
+        setInitialLoadComplete(true);
+      }
+    };
+
+    loadData();
   }, [dispatch]);
 
-  if (loading.settings) {
+  // Show loading spinner on initial load
+  if (!initialLoadComplete && loading.settings) {
     return <LoadingSpinner message="Loading configuration..." />;
   }
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Configuration
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        sx={{ mb: 3 }}
+      >
+        <Typography variant="h4">Configuration</Typography>
+      </Stack>
+
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        Manage API keys, sample limits, and global system settings
       </Typography>
 
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Global Settings
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Model: {settings.global?.model_name || 'N/A'}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Request Delay: {settings.global?.request_delay_seconds || 0} seconds
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Max Retries: {settings.global?.max_retries || 0}
-        </Typography>
-      </Paper>
+      {/* API Key Management */}
+      <APIKeyManager />
 
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          API Keys
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {Object.keys(apiKeys).length} API keys configured
-        </Typography>
-      </Paper>
+      {/* Sample Limit Configuration */}
+      <SampleLimitSliders />
+
+      {/* Global Settings */}
+      <GlobalSettings />
     </Box>
   );
 };

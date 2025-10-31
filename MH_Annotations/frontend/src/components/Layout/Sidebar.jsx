@@ -76,7 +76,7 @@ const Sidebar = () => {
       id: PANELS.CRASH,
       label: 'Crash Monitor',
       icon: <WarningIcon />,
-      badge: crashedWorkers.length > 0 ? crashedWorkers.length : null,
+      badge: (crashedWorkers && crashedWorkers.length > 0) ? crashedWorkers.length : null,
     },
   ];
 

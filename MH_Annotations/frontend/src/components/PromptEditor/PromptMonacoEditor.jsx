@@ -17,7 +17,7 @@ const PromptMonacoEditor = ({ value, onChange, readOnly = false }) => {
     });
 
     // Add custom validation for {text} placeholder
-    monaco.editor.onDidChangeModelContent(() => {
+    editor.onDidChangeModelContent(() => {
       const model = editor.getModel();
       const content = model.getValue();
       const markers = [];

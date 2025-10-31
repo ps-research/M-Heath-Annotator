@@ -1,5 +1,8 @@
 # API Keys (sensitive data)
 config/api_keys.json
+frontend/node_modules/
+frontend/build/
+control/
 
 # Data folder
 data/

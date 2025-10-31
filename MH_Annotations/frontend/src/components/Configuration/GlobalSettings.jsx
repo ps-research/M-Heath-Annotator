@@ -61,6 +61,10 @@ const GlobalSettings = () => {
 
   // Check for unsaved changes
   useEffect(() => {
+    // Guard clause: don't check changes if globalSettings hasn't loaded yet
+    if (!globalSettings) {
+      return;
+    }
     const changed = Object.keys(localSettings).some(
       (key) => localSettings[key] !== globalSettings[key]
     );

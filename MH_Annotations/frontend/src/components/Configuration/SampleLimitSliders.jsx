@@ -41,6 +41,10 @@ const SampleLimitSliders = () => {
 
   // Initialize local state from Redux
   useEffect(() => {
+    // Guard clause: don't initialize if settings haven't loaded yet
+    if (!annotatorSettings || Object.keys(annotatorSettings).length === 0) {
+      return;
+      }
     const newConfigs = {};
     ANNOTATOR_IDS.forEach((annotatorId) => {
       newConfigs[annotatorId] = {};
@@ -57,6 +61,11 @@ const SampleLimitSliders = () => {
 
   // Check for unsaved changes
   useEffect(() => {
+
+    // Guard clause: don't check if settings haven't loaded yet
+    if (!annotatorSettings || Object.keys(annotatorSettings).length === 0) {
+      return;
+    }
     const changed = ANNOTATOR_IDS.some((annotatorId) =>
       DOMAINS.some((domain) => {
         const reduxConfig = annotatorSettings[annotatorId]?.[domain];

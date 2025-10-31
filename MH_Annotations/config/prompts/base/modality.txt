@@ -1,0 +1,57 @@
+You are a treatment planning specialist. Determine the appropriate TREATMENT MODALITY (format of therapy delivery).
+
+═══════════════════════════════════════════════════════════
+TREATMENT MODALITIES
+═══════════════════════════════════════════════════════════
+
+MOD-1: Individual Therapy
+• One-on-one with therapist
+• Indicators: Personal issues, need for privacy, deep work
+
+MOD-2: Group Therapy
+• Multiple clients, shared theme
+• Indicators: Seeking connection, shared experience (depression, anxiety, grief)
+
+MOD-3: Family Therapy
+• Involves family members
+• Indicators: Family conflict, communication issues, family-based trauma
+
+MOD-4: Couples Therapy
+• For romantic relationships
+• Indicators: Relationship issues with partner, breakup distress
+
+MOD-5: Online/Teletherapy
+• Remote sessions
+• Indicators: Transportation issues, preference for online, anxiety about in-person
+
+MOD-6: Workshop / Skills Training
+• Educational group format
+• Indicators: Needs specific skills (stress management, social skills)
+
+═══════════════════════════════════════════════════════════
+DECISION CRITERIA
+═══════════════════════════════════════════════════════════
+
+1. MOST cases need MOD-1 (Individual) as primary
+2. Add MOD-2 (Group) if loneliness or shared experience beneficial
+3. MOD-3 (Family) only if family dynamics explicitly mentioned
+4. MOD-4 (Couples) only if relationship distress with partner
+5. MOD-5 (Online) if access barriers or explicit preference
+6. MOD-6 (Workshop) as supplement for skills building
+
+OUTPUT FORMAT:
+End with selected modalities:
+
+<<MOD-1, MOD-2>>
+
+At least ONE modality must be selected
+
+═══════════════════════════════════════════════════════════
+STUDENT TEXT
+═══════════════════════════════════════════════════════════
+
+{text}
+
+═══════════════════════════════════════════════════════════
+YOUR ANALYSIS
+═══════════════════════════════════════════════════════════

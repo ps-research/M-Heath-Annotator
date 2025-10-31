@@ -19,16 +19,25 @@ const initialState = {
     base: {}, // { urgency: {...}, ... }
     overrides: {}, // { annotator_1: { urgency: {...} } }
   },
+  promptVersions: {
+    loading: false,
+    error: null,
+    data: {}, // Structure: [annotator_id_domain] = {base, versions[]}
+  },
+  activeVersions: {}, // {annotator_1: {urgency: "v2_...", ...}, ...}
   loading: {
     settings: false,
     apiKeys: false,
     prompts: false,
     saving: false,
+    promptVersions: false,
+    savingVersion: false,
   },
   errors: {
     settings: null,
     apiKeys: null,
     prompts: null,
+    promptVersions: null,
   },
 };
 
@@ -147,6 +156,73 @@ export const updateDomainConfig = createAsyncThunk(
     try {
       const data = await configAPI.updateDomainConfig(annotatorId, domain, config);
       return { annotatorId, domain, config: data };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// Phase 3 - Version Management Thunks
+export const savePromptVersion = createAsyncThunk(
+  'config/savePromptVersion',
+  async ({ annotatorId, domain, versionName, content, description }, { rejectWithValue }) => {
+    try {
+      const data = await configAPI.savePromptVersion(
+        annotatorId,
+        domain,
+        versionName,
+        content,
+        description
+      );
+      return { annotatorId, domain, ...data };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const fetchPromptVersions = createAsyncThunk(
+  'config/fetchPromptVersions',
+  async ({ annotatorId, domain }, { rejectWithValue }) => {
+    try {
+      const data = await configAPI.getPromptVersions(annotatorId, domain);
+      return { annotatorId, domain, ...data };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const setActiveVersion = createAsyncThunk(
+  'config/setActiveVersion',
+  async ({ annotatorId, domain, filename }, { rejectWithValue }) => {
+    try {
+      const data = await configAPI.setActiveVersion(annotatorId, domain, filename);
+      return { annotatorId, domain, filename };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const deletePromptVersion = createAsyncThunk(
+  'config/deletePromptVersion',
+  async ({ annotatorId, domain, filename }, { rejectWithValue }) => {
+    try {
+      await configAPI.deletePromptVersion(annotatorId, domain, filename);
+      return { annotatorId, domain, filename };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const fetchVersionContent = createAsyncThunk(
+  'config/fetchVersionContent',
+  async ({ annotatorId, domain, filename }, { rejectWithValue }) => {
+    try {
+      const data = await configAPI.getVersionContent(annotatorId, domain, filename);
+      return data;
     } catch (error) {
       return rejectWithValue(error.message);
     }
@@ -273,6 +349,101 @@ const configSlice = createSlice({
         }
         state.settings.annotators[annotatorId][domain] = config;
       });
+
+    // Save Prompt Version
+    builder
+      .addCase(savePromptVersion.pending, (state) => {
+        state.loading.savingVersion = true;
+        state.errors.promptVersions = null;
+      })
+      .addCase(savePromptVersion.fulfilled, (state, action) => {
+        state.loading.savingVersion = false;
+        // Optionally update the versions data if it's already loaded
+        const { annotatorId, domain } = action.payload;
+        const key = `${annotatorId}_${domain}`;
+        if (state.promptVersions.data[key]) {
+          // Trigger refresh by clearing the data
+          delete state.promptVersions.data[key];
+        }
+      })
+      .addCase(savePromptVersion.rejected, (state, action) => {
+        state.loading.savingVersion = false;
+        state.errors.promptVersions = action.payload;
+      });
+
+    // Fetch Prompt Versions
+    builder
+      .addCase(fetchPromptVersions.pending, (state) => {
+        state.promptVersions.loading = true;
+        state.promptVersions.error = null;
+      })
+      .addCase(fetchPromptVersions.fulfilled, (state, action) => {
+        state.promptVersions.loading = false;
+        const { annotatorId, domain, ...versionsData } = action.payload;
+        const key = `${annotatorId}_${domain}`;
+        state.promptVersions.data[key] = versionsData;
+      })
+      .addCase(fetchPromptVersions.rejected, (state, action) => {
+        state.promptVersions.loading = false;
+        state.promptVersions.error = action.payload;
+      });
+
+    // Set Active Version
+    builder
+      .addCase(setActiveVersion.pending, (state) => {
+        state.loading.saving = true;
+      })
+      .addCase(setActiveVersion.fulfilled, (state, action) => {
+        state.loading.saving = false;
+        const { annotatorId, domain, filename } = action.payload;
+        const annotatorKey = `annotator_${annotatorId}`;
+        if (!state.activeVersions[annotatorKey]) {
+          state.activeVersions[annotatorKey] = {};
+        }
+        state.activeVersions[annotatorKey][domain] = filename;
+
+        // Update the versions data to reflect the new active version
+        const key = `${annotatorId}_${domain}`;
+        if (state.promptVersions.data[key]) {
+          // Mark all versions as not active
+          if (state.promptVersions.data[key].base) {
+            state.promptVersions.data[key].base.is_active = filename === null;
+          }
+          if (state.promptVersions.data[key].versions) {
+            state.promptVersions.data[key].versions = state.promptVersions.data[
+              key
+            ].versions.map((v) => ({
+              ...v,
+              is_active: v.filename === filename,
+            }));
+          }
+        }
+      })
+      .addCase(setActiveVersion.rejected, (state, action) => {
+        state.loading.saving = false;
+        state.errors.promptVersions = action.payload;
+      });
+
+    // Delete Prompt Version
+    builder
+      .addCase(deletePromptVersion.pending, (state) => {
+        state.loading.saving = true;
+      })
+      .addCase(deletePromptVersion.fulfilled, (state, action) => {
+        state.loading.saving = false;
+        const { annotatorId, domain, filename } = action.payload;
+        const key = `${annotatorId}_${domain}`;
+        // Remove from versions data
+        if (state.promptVersions.data[key]?.versions) {
+          state.promptVersions.data[key].versions = state.promptVersions.data[
+            key
+          ].versions.filter((v) => v.filename !== filename);
+        }
+      })
+      .addCase(deletePromptVersion.rejected, (state, action) => {
+        state.loading.saving = false;
+        state.errors.promptVersions = action.payload;
+      });
   },
 });
 
@@ -298,5 +469,13 @@ export const selectDomainConfig = (annotatorId, domain) => (state) =>
   state.config.settings.annotators[annotatorId]?.[domain];
 export const selectIsLoading = (state) => state.config.loading;
 export const selectErrors = (state) => state.config.errors;
+
+// Phase 3 - Version Management Selectors
+export const selectPromptVersions = (annotatorId, domain) => (state) =>
+  state.config.promptVersions.data[`${annotatorId}_${domain}`] || null;
+export const selectActiveVersionFilename = (annotatorId, domain) => (state) =>
+  state.config.activeVersions[`annotator_${annotatorId}`]?.[domain] || null;
+export const selectPromptVersionsLoading = (state) => state.config.promptVersions.loading;
+export const selectSavingVersion = (state) => state.config.loading.savingVersion;
 
 export default configSlice.reducer;

@@ -1,0 +1,42 @@
+{
+  "annotator_1": {
+    "urgency": null,
+    "therapeutic": null,
+    "intensity": null,
+    "adjunct": null,
+    "modality": null,
+    "redressal": null
+  },
+  "annotator_2": {
+    "urgency": null,
+    "therapeutic": null,
+    "intensity": null,
+    "adjunct": null,
+    "modality": null,
+    "redressal": null
+  },
+  "annotator_3": {
+    "urgency": null,
+    "therapeutic": null,
+    "intensity": null,
+    "adjunct": null,
+    "modality": null,
+    "redressal": null
+  },
+  "annotator_4": {
+    "urgency": null,
+    "therapeutic": null,
+    "intensity": null,
+    "adjunct": null,
+    "modality": null,
+    "redressal": null
+  },
+  "annotator_5": {
+    "urgency": null,
+    "therapeutic": null,
+    "intensity": null,
+    "adjunct": null,
+    "modality": null,
+    "redressal": null
+  }
+}

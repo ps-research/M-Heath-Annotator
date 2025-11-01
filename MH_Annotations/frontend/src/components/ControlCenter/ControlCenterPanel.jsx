@@ -23,6 +23,7 @@ import {
   Stop as StopIcon,
   Refresh as RefreshIcon,
   Warning as WarningIcon,
+  Pause as PauseIcon,
 } from '@mui/icons-material';
 import { controlAPI, monitoringAPI } from '../../services/api';
 import {
@@ -54,9 +55,14 @@ const ControlCenterPanel = () => {
   // Notifications
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
-  // Load annotator summaries on mount
+  // Load annotator summaries on mount and check for active workers
   useEffect(() => {
-    loadAnnotatorSummaries();
+    const initialize = async () => {
+      await loadAnnotatorSummaries();
+      await checkForActiveWorkers();
+    };
+    initialize();
+
     return () => {
       if (pollingInterval) {
         clearInterval(pollingInterval);
@@ -78,10 +84,29 @@ const ControlCenterPanel = () => {
 
   const loadActiveWorkers = async () => {
     try {
-      const workers = await monitoringAPI.getWorkers({ status: 'running,paused' });
-      setActiveWorkers(workers || []);
+      // Get all workers without status filter, then filter on frontend
+      const allWorkers = await monitoringAPI.getWorkers();
+      const activeWorkers = (allWorkers || []).filter(
+        worker => worker.status === 'running' || worker.status === 'paused'
+      );
+      setActiveWorkers(activeWorkers);
+      return activeWorkers;
     } catch (error) {
       console.error('Failed to load active workers:', error);
+      return [];
+    }
+  };
+
+  const checkForActiveWorkers = async () => {
+    try {
+      const workers = await loadActiveWorkers();
+      // If there are active workers, switch to running view and start polling
+      if (workers && workers.length > 0) {
+        setView('running');
+        startPolling();
+      }
+    } catch (error) {
+      console.error('Failed to check for active workers:', error);
     }
   };
 
@@ -218,9 +243,51 @@ const ControlCenterPanel = () => {
       setTerminateAllDialog(false);
 
       // Reload workers
-      await loadActiveWorkers();
+      const workers = await loadActiveWorkers();
+
+      // If no more active workers, go back to initial view
+      if (!workers || workers.length === 0) {
+        stopPolling();
+        setView('initial');
+      }
     } catch (error) {
       showSnackbar('Failed to terminate all workers: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Pause All handler
+  const handlePauseAll = async () => {
+    try {
+      setLoading(true);
+
+      await controlAPI.pauseAll();
+
+      showSnackbar('All workers paused', 'success');
+
+      // Reload workers
+      await loadActiveWorkers();
+    } catch (error) {
+      showSnackbar('Failed to pause all workers: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Resume All handler
+  const handleResumeAll = async () => {
+    try {
+      setLoading(true);
+
+      await controlAPI.resumeAll();
+
+      showSnackbar('All workers resumed', 'success');
+
+      // Reload workers
+      await loadActiveWorkers();
+    } catch (error) {
+      showSnackbar('Failed to resume all workers: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -404,7 +471,19 @@ const ControlCenterPanel = () => {
               Batch Controls
             </Typography>
             <Grid container spacing={2}>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} md={3}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  color="warning"
+                  startIcon={<PauseIcon />}
+                  onClick={handlePauseAll}
+                  disabled={loading || activeWorkers.length === 0}
+                >
+                  Pause All
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={3}>
                 <Button
                   fullWidth
                   variant="contained"
@@ -416,7 +495,7 @@ const ControlCenterPanel = () => {
                   Terminate All
                 </Button>
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} md={3}>
                 <Button
                   fullWidth
                   variant="contained"
@@ -424,11 +503,12 @@ const ControlCenterPanel = () => {
                   startIcon={<RefreshIcon />}
                   onClick={() => setResetDialog(true)}
                   disabled={loading}
+                  sx={{ bgcolor: 'warning.dark' }}
                 >
                   Reset
                 </Button>
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} md={3}>
                 <Button
                   fullWidth
                   variant="contained"

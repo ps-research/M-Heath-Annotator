@@ -1,11 +1,14 @@
 """
 Worker manager for spawning and controlling worker processes.
+
+UPGRADED: Now uses ProcessRegistry for persistent tracking and concurrency limits.
 """
 
 import sys
 import os
 import subprocess
 import time
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime, timezone
@@ -14,6 +17,9 @@ from datetime import datetime, timezone
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.core.progress_logger import ProgressLogger
+from backend.core.process_registry import ProcessRegistry
+from backend.core.heartbeat_manager import HeartbeatManager
+from backend.core.logger_config import get_manager_logger
 from backend.utils.file_operations import atomic_read_json, atomic_write_json
 
 
@@ -28,12 +34,26 @@ class WorkerManager:
     - Graceful shutdown
     """
 
-    def __init__(self):
-        """Initialize worker manager."""
+    def __init__(self, max_concurrent_workers: int = 10):
+        """
+        Initialize worker manager.
+
+        Args:
+            max_concurrent_workers: Maximum number of workers to run concurrently
+        """
         self.base_dir = Path(__file__).parent.parent.parent
+        self.logger = get_manager_logger()
+
+        # NEW: Use ProcessRegistry instead of in-memory dict
+        self.process_registry = ProcessRegistry()
+        self.heartbeat_manager = HeartbeatManager()
 
         # Track running processes: (annotator_id, domain) -> subprocess.Popen
+        # Keep for backward compatibility during transition
         self.processes: Dict[Tuple[int, str], subprocess.Popen] = {}
+
+        # NEW: Concurrency limit
+        self.max_concurrent_workers = max_concurrent_workers
 
         # Load settings
         settings_path = self.base_dir / "config" / "settings.json"
@@ -41,6 +61,8 @@ class WorkerManager:
 
         if not self.settings:
             raise FileNotFoundError(f"Settings file not found: {settings_path}")
+
+        self.logger.info("WorkerManager initialized")
 
     def start_worker(self, annotator_id: int, domain: str) -> Dict[str, Any]:
         """
@@ -53,20 +75,30 @@ class WorkerManager:
         Returns:
             Status dictionary with result
         """
-        # Check if already running
-        key = (annotator_id, domain)
-        if key in self.processes:
-            proc = self.processes[key]
-            if proc.poll() is None:  # Still running
-                return {
-                    "status": "already_running",
-                    "pid": proc.pid,
-                    "annotator_id": annotator_id,
-                    "domain": domain
-                }
-            else:
-                # Process finished, remove from dict
-                del self.processes[key]
+        # NEW: Check if already running using ProcessRegistry
+        if self.process_registry.is_worker_actually_running(annotator_id, domain):
+            pid = self.process_registry.get_worker_pid(annotator_id, domain)
+            self.logger.warning(f"Worker {annotator_id}/{domain} already running (PID {pid})")
+            return {
+                "status": "already_running",
+                "pid": pid,
+                "annotator_id": annotator_id,
+                "domain": domain
+            }
+
+        # Check concurrency limit
+        running_count = len(self.process_registry.get_running_workers())
+        if running_count >= self.max_concurrent_workers:
+            self.logger.warning(
+                f"Cannot start worker {annotator_id}/{domain}: "
+                f"concurrent limit reached ({running_count}/{self.max_concurrent_workers})"
+            )
+            return {
+                "status": "concurrency_limit_reached",
+                "annotator_id": annotator_id,
+                "domain": domain,
+                "message": f"Max concurrent workers ({self.max_concurrent_workers}) reached"
+            }
 
         # Check if enabled in settings
         try:
@@ -108,10 +140,14 @@ class WorkerManager:
                 cwd=str(self.base_dir)  # Set working directory
             )
 
-            # Store process
+            # Store process (backward compatibility)
+            key = (annotator_id, domain)
             self.processes[key] = proc
 
-            print(f"✅ Started worker for Annotator {annotator_id}, Domain {domain}, PID: {proc.pid}")
+            # NEW: Register in ProcessRegistry
+            self.process_registry.register_worker(annotator_id, domain, proc.pid)
+
+            self.logger.info(f"Started worker for Annotator {annotator_id}, Domain {domain}, PID: {proc.pid}")
 
             return {
                 "status": "started",
@@ -195,12 +231,18 @@ class WorkerManager:
         # Cleanup
         del self.processes[key]
 
+        # NEW: Unregister from ProcessRegistry and cleanup heartbeat
+        self.process_registry.unregister_worker(annotator_id, domain)
+        self.heartbeat_manager.cleanup_heartbeat(annotator_id, domain)
+
         # Delete control file
         try:
             if control_path.exists():
                 control_path.unlink()
         except:
             pass
+
+        self.logger.info(f"Worker {annotator_id}/{domain} stopped (exit_code={exit_code}, forced={forced})")
 
         return {
             "status": "stopped",
@@ -289,47 +331,32 @@ class WorkerManager:
                 "error": str(e)
             }
 
-        # Check if process is running using PID from progress file
+        # NEW: Use ProcessRegistry for accurate process detection
         pid = progress.get("pid")
-        running = False
+        running = self.process_registry.is_worker_actually_running(annotator_id, domain)
 
-        if pid is not None:
-            try:
-                # Use os.kill with signal 0 to check if process exists
-                # This doesn't actually kill the process, just checks existence
-                os.kill(pid, 0)
-                running = True
-            except (OSError, ProcessLookupError):
-                # Process doesn't exist
-                running = False
-            except Exception:
-                # Any other error, assume not running
-                running = False
+        # NEW: Check heartbeat for additional accuracy
+        heartbeat_alive = self.heartbeat_manager.is_heartbeat_alive(annotator_id, domain)
 
-        # Also check in-memory process tracking for recently started workers
-        key = (annotator_id, domain)
-        if key in self.processes:
-            proc = self.processes[key]
-            if proc.poll() is None:  # Still alive
-                running = True
-            else:
-                # Process died, remove from dict
-                del self.processes[key]
-
-        # Check if stale
+        # Check if stale using progress file
         crash_detection_minutes = self.settings["global"]["crash_detection_minutes"]
-        stale = logger.is_stale(minutes=crash_detection_minutes)
+        progress_stale = logger.is_stale(minutes=crash_detection_minutes)
 
-        # Determine status
+        # Determine status with enhanced detection
         status = progress.get("status", "unknown")
 
-        # If stale and was running, mark as crashed
-        if stale and status == "running":
+        # If heartbeat is dead and progress says running, mark as crashed
+        if not heartbeat_alive and status == "running" and pid is not None:
             status = "crashed"
             running = False
 
-        # If PID exists but process is not running, and status was running, mark as crashed
-        if pid is not None and not running and status == "running":
+        # If progress is stale and was running, mark as crashed
+        elif progress_stale and status == "running":
+            status = "crashed"
+            running = False
+
+        # If PID exists but process is not actually running, mark as crashed
+        elif pid is not None and not running and status == "running":
             status = "crashed"
 
         return {

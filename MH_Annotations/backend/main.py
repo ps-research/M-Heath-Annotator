@@ -1,17 +1,23 @@
 """
 FastAPI application entry point for Mental Health Annotation System.
+
+UPGRADED: Now includes automatic watchdog monitoring and config validation.
 """
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from datetime import datetime
+import asyncio
 
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.middleware.error_handler import validation_exception_handler, generic_exception_handler
+from backend.core.worker_watchdog import WorkerWatchdog
+from backend.core.config_validator import ConfigValidator
+from backend.core.logger_config import setup_logging
 
 
 # Create FastAPI app
@@ -50,33 +56,86 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup."""
-    print("=" * 60)
-    print("Mental Health Annotation API Starting...")
-    print(f"Timestamp: {datetime.utcnow().isoformat()}")
-    print("=" * 60)
+    # Setup logging
+    logger = setup_logging("main", log_level="INFO")
+
+    logger.info("=" * 70)
+    logger.info("Mental Health Annotation API Starting...")
+    logger.info(f"Timestamp: {datetime.utcnow().isoformat()}")
+    logger.info("=" * 70)
+
+    # Validate configuration
+    logger.info("Validating configuration...")
+    validator = ConfigValidator()
+    is_valid, config_objects, errors = validator.validate_all()
+
+    if not is_valid:
+        logger.error("Configuration validation failed:")
+        for error in errors:
+            logger.error(f"  - {error}")
+        logger.warning("System will start but may encounter errors")
+    else:
+        logger.info("Configuration validation passed")
+        summary = validator.get_validation_summary()
+        if "statistics" in summary:
+            stats = summary["statistics"]
+            logger.info(f"Enabled workers: {stats['enabled_workers']}")
+            logger.info(f"Total target samples: {stats['total_target_samples']}")
 
     # Start WebSocket broadcast task
     try:
         from backend.websocket_manager import ws_manager
         ws_manager.start_broadcast_task()
+        logger.info("WebSocket manager started")
     except Exception as e:
-        print(f"Warning: Could not start WebSocket manager: {e}")
+        logger.warning(f"Could not start WebSocket manager: {e}")
+
+    # NEW: Start Worker Watchdog
+    logger.info("Starting Worker Watchdog...")
+    try:
+        app.state.watchdog = WorkerWatchdog(
+            check_interval=60,  # Check every minute
+            max_restart_attempts=3
+        )
+        asyncio.create_task(app.state.watchdog.monitor_loop())
+        logger.info("Worker Watchdog started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start Worker Watchdog: {e}")
+        logger.error("Automatic recovery will NOT be available")
+
+    logger.info("=" * 70)
+    logger.info("System Ready!")
+    logger.info("=" * 70)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on application shutdown."""
-    print("=" * 60)
-    print("Mental Health Annotation API Shutting Down...")
-    print(f"Timestamp: {datetime.utcnow().isoformat()}")
-    print("=" * 60)
+    logger = setup_logging("main", log_level="INFO")
+
+    logger.info("=" * 70)
+    logger.info("Mental Health Annotation API Shutting Down...")
+    logger.info(f"Timestamp: {datetime.utcnow().isoformat()}")
+    logger.info("=" * 70)
+
+    # NEW: Stop Worker Watchdog
+    if hasattr(app.state, 'watchdog'):
+        logger.info("Stopping Worker Watchdog...")
+        try:
+            await app.state.watchdog.stop()
+            logger.info("Worker Watchdog stopped")
+        except Exception as e:
+            logger.error(f"Error stopping watchdog: {e}")
 
     # Stop WebSocket broadcast task
     try:
         from backend.websocket_manager import ws_manager
         ws_manager.stop_broadcast_task()
+        logger.info("WebSocket manager stopped")
     except Exception as e:
-        print(f"Warning: Could not stop WebSocket manager: {e}")
+        logger.warning(f"Could not stop WebSocket manager: {e}")
+
+    logger.info("Shutdown complete")
 
 
 # Import and include routers

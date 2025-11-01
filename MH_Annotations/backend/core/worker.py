@@ -2,6 +2,8 @@
 Worker process for annotating samples.
 
 Each worker handles one annotator-domain pair.
+
+UPGRADED: Now includes heartbeat monitoring, rate limiting, and structured logging.
 """
 
 import os
@@ -20,6 +22,9 @@ from backend.core.annotator import GeminiAnnotator
 from backend.core.parser import ResponseParser
 from backend.core.progress_logger import ProgressLogger
 from backend.core.dataset_loader import DatasetLoader
+from backend.core.heartbeat_manager import WorkerHeartbeat
+from backend.core.rate_limiter import RateLimiter
+from backend.core.logger_config import get_worker_logger
 from backend.utils.file_operations import atomic_read_json, atomic_write_json, ensure_directory
 
 
@@ -49,6 +54,9 @@ class AnnotationWorker:
         """
         self.annotator_id = annotator_id
         self.domain = domain
+
+        # Setup logger
+        self.logger = get_worker_logger(annotator_id, domain)
 
         # Validate inputs
         if annotator_id not in [1, 2, 3, 4, 5]:
@@ -85,6 +93,15 @@ class AnnotationWorker:
         self.parser = ResponseParser()
         self.progress_logger = ProgressLogger(annotator_id, domain)
 
+        # Initialize NEW systems
+        self.heartbeat = WorkerHeartbeat(annotator_id, domain, interval=30)
+        self.rate_limiter = RateLimiter(
+            requests_per_minute=15,
+            requests_per_day=1500,
+            burst_size=5
+        )
+        self.api_key_id = f"annotator_{annotator_id}"
+
         # Initialize dataset loader
         dataset_path = self.base_dir / "data" / "source" / "m_help_dataset.xlsx"
         self.dataset_loader = DatasetLoader(str(dataset_path))
@@ -93,8 +110,8 @@ class AnnotationWorker:
         try:
             self.dataset_loader.load()
         except FileNotFoundError as e:
-            print(f"❌ Dataset file not found: {dataset_path}")
-            print(f"   Please place your Excel file at this location.")
+            self.logger.error(f"Dataset file not found: {dataset_path}")
+            self.logger.error("Please place your Excel file at this location.")
             raise
 
         # Set control file path
@@ -110,7 +127,7 @@ class AnnotationWorker:
         self.last_control_check_time = time.time()
         self.should_stop_flag = False
 
-        print(f"✅ Worker initialized for Annotator {annotator_id}, Domain {domain}")
+        self.logger.info(f"Worker initialized for Annotator {annotator_id}, Domain {domain}")
 
     def load_prompt(self) -> str:
         """
@@ -221,23 +238,28 @@ class AnnotationWorker:
         """
         Handle pause command - enter wait loop until resumed or stopped.
         """
-        print(f"⏸️  Worker paused")
+        self.logger.info("Worker paused")
         self.progress_logger.update_status("paused")
+        self.heartbeat.send_now("paused")
 
         # Enter pause loop
         while True:
             time.sleep(5)  # Check every 5 seconds
 
+            # Send heartbeat while paused
+            self.heartbeat.maybe_send("paused")
+
             command = self.check_control_signal()
 
             if command == "resume":
-                print(f"▶️  Worker resumed")
+                self.logger.info("Worker resumed")
                 self.progress_logger.update_status("running")
+                self.heartbeat.send_now("running")
                 self.last_control_check_time = time.time()
                 break
 
             elif command == "stop":
-                print(f"⏹️  Stop signal received during pause")
+                self.logger.info("Stop signal received during pause")
                 self.should_stop_flag = True
                 break
 
@@ -245,8 +267,9 @@ class AnnotationWorker:
         """
         Handle stop command - set flag to exit gracefully.
         """
-        print(f"⏹️  Worker stopping gracefully")
+        self.logger.info("Worker stopping gracefully")
         self.progress_logger.update_status("stopped")
+        self.heartbeat.send_now("stopped")
         self.should_stop_flag = True
 
     def annotate_sample(self, sample: Dict[str, str], prompt_template: str) -> Dict[str, Any]:
@@ -263,6 +286,11 @@ class AnnotationWorker:
         Raises:
             Exception: If rate limit hit or invalid API key
         """
+        # Acquire rate limit permission
+        if not self.rate_limiter.acquire_sync(self.api_key_id, timeout=300):
+            self.logger.error(f"Rate limit timeout for sample {sample['id']}")
+            raise Exception("RATE_LIMIT_TIMEOUT")
+
         # Format prompt
         prompt = prompt_template.format(text=sample['text'])
 
@@ -338,9 +366,9 @@ class AnnotationWorker:
 
         Processes samples until target reached or stopped.
         """
-        print(f"\n{'='*70}")
-        print(f"🚀 Worker starting for Annotator {self.annotator_id}, Domain {self.domain}")
-        print(f"{'='*70}\n")
+        self.logger.info("="*70)
+        self.logger.info(f"Worker starting for Annotator {self.annotator_id}, Domain {self.domain}")
+        self.logger.info("="*70)
 
         # Initialize
         progress = self.progress_logger.load()
@@ -348,11 +376,14 @@ class AnnotationWorker:
         self.progress_logger.update_pid(os.getpid())
         self.progress_logger.set_start_time()
 
+        # Start heartbeat
+        self.heartbeat.start()
+
         # Load prompt template
         try:
             prompt_template = self.load_prompt()
         except FileNotFoundError as e:
-            print(f"❌ {str(e)}")
+            self.logger.error(str(e))
             self.progress_logger.update_status("stopped")
             return
 
@@ -362,13 +393,17 @@ class AnnotationWorker:
         # Track start time for speed calculation
         start_time = time.time()
 
-        print(f"📊 Target: {progress['target_count']} samples")
-        print(f"✅ Already completed: {len(progress['completed_ids'])} samples")
-        print(f"🔄 Starting annotation loop...\n")
+        self.logger.info(f"Target: {progress['target_count']} samples")
+        self.logger.info(f"Already completed: {len(progress['completed_ids'])} samples")
+        self.logger.info("Starting annotation loop...")
 
         # Main loop
         while not self.should_stop_flag:
             self.iteration_count += 1
+            self.heartbeat.increment_iteration()
+
+            # Send heartbeat periodically
+            self.heartbeat.maybe_send("running")
 
             # Check control signals
             if self.should_check_control():
@@ -388,8 +423,9 @@ class AnnotationWorker:
 
             if sample is None:
                 # No more samples or target reached
-                print(f"\n✅ Target reached!")
+                self.logger.info("Target reached!")
                 self.progress_logger.update_status("completed")
+                self.heartbeat.send_now("completed")
                 break
 
             try:
@@ -408,9 +444,9 @@ class AnnotationWorker:
 
                 # Log progress
                 if result['malformed']:
-                    print(f"⚠️  Sample {sample['id']}: MALFORMED")
+                    self.logger.warning(f"Sample {sample['id']}: MALFORMED")
                 else:
-                    print(f"✅ Sample {sample['id']}: {result['label']}")
+                    self.logger.info(f"Sample {sample['id']}: {result['label']}")
 
                 # Update speed every 10 samples
                 if self.iteration_count % 10 == 0:
@@ -420,7 +456,7 @@ class AnnotationWorker:
                     self.progress_logger.update_speed(samples_done, elapsed)
 
                     speed = progress['stats']['samples_per_min']
-                    print(f"📈 Speed: {speed:.2f} samples/min")
+                    self.logger.info(f"Speed: {speed:.2f} samples/min")
 
                 # Rate limiting delay
                 time.sleep(request_delay)
@@ -428,30 +464,35 @@ class AnnotationWorker:
             except Exception as e:
                 error_str = str(e)
 
-                if "RATE_LIMIT_HIT" in error_str:
-                    print(f"\n⏸️  Paused due to rate limit. Exiting...")
+                if "RATE_LIMIT" in error_str:
+                    self.logger.warning("Paused due to rate limit. Exiting...")
+                    self.heartbeat.send_now("paused")
                     break
 
                 elif "INVALID_API_KEY" in error_str:
-                    print(f"\n❌ Invalid API key. Exiting...")
+                    self.logger.error("Invalid API key. Exiting...")
                     self.progress_logger.update_status("stopped")
+                    self.heartbeat.send_now("stopped")
                     break
 
                 else:
                     # Log unexpected error and continue
-                    print(f"\n⚠️  Unexpected error: {str(e)}")
-                    print(f"   Continuing to next sample...")
+                    self.logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+                    self.logger.info("Continuing to next sample...")
                     continue
 
         # Cleanup
-        print(f"\n{'='*70}")
-        print(f"🏁 Worker finished for Annotator {self.annotator_id}, Domain {self.domain}")
-        print(f"{'='*70}\n")
+        self.logger.info("="*70)
+        self.logger.info(f"Worker finished for Annotator {self.annotator_id}, Domain {self.domain}")
+        self.logger.info("="*70)
 
         final_progress = self.progress_logger.load()
-        print(f"✅ Completed: {len(final_progress['completed_ids'])} samples")
-        print(f"⚠️  Malformed: {len(final_progress['malformed_ids'])} samples")
-        print(f"📊 Final status: {final_progress['status']}\n")
+        self.logger.info(f"Completed: {len(final_progress['completed_ids'])} samples")
+        self.logger.info(f"Malformed: {len(final_progress['malformed_ids'])} samples")
+        self.logger.info(f"Final status: {final_progress['status']}")
+
+        # Cleanup heartbeat
+        self.heartbeat.cleanup()
 
 
 def main():

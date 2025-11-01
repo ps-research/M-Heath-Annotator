@@ -150,15 +150,29 @@ export const controlAPI = {
 
   resetWorker: (annotatorId, domain, confirmation) =>
     api.post('/api/control/reset', {
+      scope: 'single',
       annotator_id: annotatorId,
       domain,
       confirmation,
     }),
   resetAll: (confirmation) =>
-    api.post('/api/control/reset', { confirmation }),
+    api.post('/api/control/reset', {
+      scope: 'all',
+      confirmation,
+    }),
 
   restartWorker: (annotatorId, domain) =>
     api.post(`/api/control/restart/${annotatorId}/${domain}`),
+
+  // Run management
+  getEnabledWorkers: () => api.get('/api/control/enabled-workers'),
+  getAnnotatorSummaries: () => api.get('/api/control/annotator-summaries'),
+  getAnnotatorSummary: (annotatorId) =>
+    api.get(`/api/control/annotator-summaries/${annotatorId}`),
+
+  // Factory reset
+  factoryReset: (confirmation) =>
+    api.post('/api/control/factory-reset', null, { params: { confirmation } }),
 };
 
 // Monitoring API

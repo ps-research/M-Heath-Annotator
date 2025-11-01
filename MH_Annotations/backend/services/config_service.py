@@ -80,8 +80,8 @@ class ConfigService:
         except KeyError:
             raise ValueError(f"Configuration not found for annotator {annotator_id}, domain {domain}")
 
-    def update_domain_config(self, annotator_id: int, domain: str, config: Dict[str, Any]) -> None:
-        """Update configuration for specific annotator-domain pair."""
+    def update_domain_config(self, annotator_id: int, domain: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update configuration for specific annotator-domain pair and return updated config."""
         settings = self.get_settings()
         annotator_key = str(annotator_id)
         if "annotators" not in settings:
@@ -94,6 +94,8 @@ class ConfigService:
             if value is not None:
                 settings["annotators"][annotator_key][domain][key] = value
         atomic_write_json(settings, str(self.settings_path))
+        # Return the updated config
+        return settings["annotators"][annotator_key][domain]
 
     def list_prompts(self) -> Dict[str, Any]:
         """List all prompts with metadata."""

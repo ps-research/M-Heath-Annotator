@@ -42,6 +42,13 @@ api.interceptors.response.use(
       }
     }
 
+    // Extract data from APIResponse wrapper if present
+    // Backend returns: { success: bool, data: any, message: string }
+    // We want to return just the 'data' field
+    if (response.data && typeof response.data === 'object' && 'data' in response.data) {
+      return response.data.data;
+    }
+
     return response.data;
   },
   (error) => {

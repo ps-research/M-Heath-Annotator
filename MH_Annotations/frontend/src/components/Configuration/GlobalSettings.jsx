@@ -84,7 +84,8 @@ const GlobalSettings = () => {
 
   const handleSave = async () => {
     try {
-      await dispatch(updateSettings({ global: localSettings })).unwrap();
+      // Send flat object with individual fields, not wrapped in { global: ... }
+      await dispatch(updateSettings(localSettings)).unwrap();
     } catch (error) {
       // Error handled by Redux state
     }

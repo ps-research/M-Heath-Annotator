@@ -149,20 +149,21 @@ async def update_domain_config(annotator_id: int, domain: str, config: Annotator
     """Update configuration for specific annotator-domain pair."""
     if annotator_id < 1 or annotator_id > 5:
         raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
-    
+
     valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
     if domain not in valid_domains:
         raise HTTPException(status_code=400, detail=f"Invalid domain. Must be one of: {', '.join(valid_domains)}")
-    
+
     try:
         config_dict = {k: v for k, v in config.model_dump().items() if v is not None}
         if not config_dict:
             raise HTTPException(status_code=400, detail="At least one field must be provided")
-        
-        config_service.update_domain_config(annotator_id, domain, config_dict)
+
+        # Update and get the updated config back
+        updated_config = config_service.update_domain_config(annotator_id, domain, config_dict)
         return APIResponse(
             success=True,
-            data={"annotator_id": annotator_id, "domain": domain},
+            data=updated_config,
             message="Configuration updated. Restart worker for changes to take effect."
         )
     except HTTPException:

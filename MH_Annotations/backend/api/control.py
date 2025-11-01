@@ -192,7 +192,7 @@ async def factory_reset(confirmation: str):
         import os
         import signal
         import time
-        from backend.core.process_registry import ProcessRegistry
+        from backend.core.db_manager import get_db
 
         print("\n" + "="*70)
         print("🔴 FACTORY RESET INITIATED")
@@ -205,11 +205,11 @@ async def factory_reset(confirmation: str):
 
         # Step 2: Verify all workers stopped (with force kill if needed)
         print("\n🔍 Step 2/3: Verifying workers stopped...")
-        registry = ProcessRegistry()
+        db = get_db()
 
         # Wait up to 10 seconds for workers to fully stop
         for attempt in range(10):
-            running = registry.get_running_workers()
+            running = db.get_all_running_workers()
             if not running:
                 print("   ✅ All workers stopped successfully")
                 break
@@ -217,7 +217,7 @@ async def factory_reset(confirmation: str):
             time.sleep(1)
 
         # Force kill any remaining workers
-        running = registry.get_running_workers()
+        running = db.get_all_running_workers()
         if running:
             print(f"\n   ⚠️  {len(running)} stubborn workers detected. Force killing...")
             for worker in running:
@@ -236,7 +236,7 @@ async def factory_reset(confirmation: str):
             time.sleep(2)
 
             # Final check
-            running = registry.get_running_workers()
+            running = db.get_all_running_workers()
             if running:
                 print(f"   ❌ WARNING: {len(running)} workers still running after force kill!")
             else:

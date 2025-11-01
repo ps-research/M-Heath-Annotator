@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.core.worker_manager import WorkerManager
+from backend.core.db_manager import get_db
 from backend.utils.file_operations import atomic_write_json
 
 
@@ -22,6 +23,7 @@ class WorkerService:
     def __init__(self):
         """Initialize worker service."""
         self.worker_manager = WorkerManager()
+        self.db = get_db()
         self.base_dir = Path(__file__).parent.parent.parent
         self.domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
 
@@ -134,9 +136,11 @@ class WorkerService:
 
     def reset_data(self, scope: str, annotator_id: Optional[int] = None, domain: Optional[str] = None) -> Dict[str, Any]:
         """
-        Reset annotation data.
+        Reset annotation data using database.
 
-        FIXED: Now properly closes log files, clears ProcessRegistry, and handles locked files.
+        Scope:
+            - "single": Reset specific worker
+            - "all": Factory reset - clear all data
         """
         deleted_files = []
         deleted_workers = 0
@@ -146,15 +150,17 @@ class WorkerService:
             if not annotator_id or not domain:
                 raise ValueError("annotator_id and domain required for single scope")
 
-            # Delete annotations directory
-            ann_dir = self.base_dir / "data" / "annotations" / f"annotator_{annotator_id}" / domain
-            if ann_dir.exists():
-                # Count files before deletion
-                for f in ann_dir.rglob("*"):
-                    if f.is_file():
-                        deleted_files.append(str(f.relative_to(self.base_dir)))
-                shutil.rmtree(ann_dir)
-                deleted_workers = 1
+            print(f"🧹 Resetting worker {annotator_id}/{domain}...")
+
+            # Reset worker in database
+            self.db.reset_worker(annotator_id, domain)
+            deleted_workers = 1
+
+            # Delete annotations JSONL file
+            ann_file = self.base_dir / "data" / "annotations" / f"annotator_{annotator_id}" / domain / "annotations.jsonl"
+            if ann_file.exists():
+                ann_file.unlink()
+                deleted_files.append(str(ann_file.relative_to(self.base_dir)))
 
             # Delete control file
             control_file = self.base_dir / "control" / f"annotator_{annotator_id}_{domain}.json"
@@ -162,10 +168,12 @@ class WorkerService:
                 control_file.unlink()
                 deleted_files.append(str(control_file.relative_to(self.base_dir)))
 
+            print(f"   ✓ Worker {annotator_id}/{domain} reset")
+
         elif scope == "all":
             print("🧹 FACTORY RESET: Cleaning up system state...")
 
-            # FIXED: Step 1 - Close all log file handlers to release locks
+            # Step 1 - Close all log file handlers to release locks
             print("   Closing all log file handlers...")
             loggers_to_close = []
             for name in list(logging.Logger.manager.loggerDict.keys()):
@@ -185,22 +193,29 @@ class WorkerService:
 
             print("   ✓ Log handlers closed")
 
-            # Step 2 - Delete all annotations
-            print("   Deleting annotations...")
+            # Step 2 - Factory reset database (preserves configuration)
+            print("   Resetting database...")
+            try:
+                self.db.factory_reset()
+                deleted_workers = 30
+                print("   ✓ Database reset completed")
+            except Exception as e:
+                print(f"   ⚠️  Error resetting database: {e}")
+
+            # Step 3 - Delete all annotation JSONL files
+            print("   Deleting annotation files...")
             ann_base = self.base_dir / "data" / "annotations"
             if ann_base.exists():
                 try:
-                    for f in ann_base.rglob("*"):
+                    for f in ann_base.rglob("*.jsonl"):
                         if f.is_file():
+                            f.unlink()
                             deleted_files.append(str(f.relative_to(self.base_dir)))
-                    shutil.rmtree(ann_base)
-                    ann_base.mkdir(parents=True, exist_ok=True)
-                    deleted_workers = 30
-                    print("   ✓ Annotations deleted")
+                    print("   ✓ Annotation files deleted")
                 except OSError as e:
                     print(f"   ⚠️  Error deleting annotations: {e}")
 
-            # Step 3 - Delete all logs (with retry for locked files)
+            # Step 4 - Delete all logs (with retry for locked files)
             print("   Deleting logs...")
             logs_dir = self.base_dir / "data" / "logs"
             if logs_dir.exists():
@@ -223,7 +238,7 @@ class WorkerService:
                             except:
                                 pass
 
-            # Step 4 - Delete all control files
+            # Step 5 - Delete all control files
             print("   Deleting control files...")
             control_dir = self.base_dir / "control"
             if control_dir.exists():
@@ -235,30 +250,7 @@ class WorkerService:
                         pass
                 print("   ✓ Control files deleted")
 
-            # FIXED: Step 5 - Clear ProcessRegistry
-            print("   Clearing ProcessRegistry...")
-            from backend.core.process_registry import ProcessRegistry
-            process_registry = ProcessRegistry()
-            registry_path = process_registry.registry_path
-            if registry_path.exists():
-                try:
-                    atomic_write_json({}, str(registry_path))
-                    print("   ✓ ProcessRegistry cleared")
-                except Exception as e:
-                    print(f"   ⚠️  Error clearing ProcessRegistry: {e}")
-
-            # FIXED: Step 6 - Clear heartbeats directory
-            print("   Clearing heartbeats...")
-            heartbeats_dir = self.base_dir / "data" / "heartbeats"
-            if heartbeats_dir.exists():
-                try:
-                    shutil.rmtree(heartbeats_dir)
-                    heartbeats_dir.mkdir(parents=True, exist_ok=True)
-                    print("   ✓ Heartbeats cleared")
-                except OSError as e:
-                    print(f"   ⚠️  Error deleting heartbeats: {e}")
-
-            # FIXED: Step 7 - Clear rate limiter state
+            # Step 6 - Clear rate limiter state
             print("   Clearing rate limiter state...")
             rate_limiter_dir = self.base_dir / "data" / "rate_limiter"
             if rate_limiter_dir.exists():

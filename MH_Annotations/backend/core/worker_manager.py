@@ -17,9 +17,7 @@ from datetime import datetime, timezone
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from backend.core.progress_logger import ProgressLogger
-from backend.core.process_registry import ProcessRegistry
-from backend.core.heartbeat_manager import HeartbeatManager
+from backend.core.db_manager import get_db
 from backend.core.logger_config import get_manager_logger
 from backend.utils.file_operations import atomic_read_json, atomic_write_json
 
@@ -45,15 +43,13 @@ class WorkerManager:
         self.base_dir = Path(__file__).parent.parent.parent
         self.logger = get_manager_logger()
 
-        # NEW: Use ProcessRegistry instead of in-memory dict
-        self.process_registry = ProcessRegistry()
-        self.heartbeat_manager = HeartbeatManager()
+        # Use database manager (replaces ProcessRegistry, HeartbeatManager, ProgressLogger)
+        self.db = get_db()
 
         # Track running processes: (annotator_id, domain) -> subprocess.Popen
-        # Keep for backward compatibility during transition
         self.processes: Dict[Tuple[int, str], subprocess.Popen] = {}
 
-        # NEW: Concurrency limit
+        # Concurrency limit
         self.max_concurrent_workers = max_concurrent_workers
 
         # Load settings
@@ -63,23 +59,26 @@ class WorkerManager:
         if not self.settings:
             raise FileNotFoundError(f"Settings file not found: {settings_path}")
 
+        # Initialize database with worker configurations
+        self.db.initialize_workers(self.settings)
+
         self.logger.info("WorkerManager initialized")
 
-        # NEW: Sync with running workers from registry (after restart)
-        self._sync_processes_from_registry()
+        # Sync with running workers from database (after restart)
+        self._sync_processes_from_database()
 
-    def _sync_processes_from_registry(self) -> None:
+    def _sync_processes_from_database(self) -> None:
         """
-        Sync in-memory processes dict with persistent registry.
+        Sync in-memory processes dict with database.
 
         Called on startup to detect workers that were running before backend restart.
         Note: We cannot recreate subprocess.Popen objects, but we log their existence.
         """
-        running = self.process_registry.get_running_workers()
+        running = self.db.get_all_running_workers()
         if running:
             self.logger.warning(
                 f"Found {len(running)} workers running from before backend restart. "
-                "These will be managed via ProcessRegistry and control signals."
+                "These will be managed via database and control signals."
             )
             for worker_info in running:
                 ann_id = worker_info['annotator_id']
@@ -98,9 +97,10 @@ class WorkerManager:
         Returns:
             Status dictionary with result
         """
-        # NEW: Check if already running using ProcessRegistry
-        if self.process_registry.is_worker_actually_running(annotator_id, domain):
-            pid = self.process_registry.get_worker_pid(annotator_id, domain)
+        # Check if already running using database
+        status = self.db.get_worker_status(annotator_id, domain)
+        if status.get('running'):
+            pid = status.get('pid')
             self.logger.warning(f"Worker {annotator_id}/{domain} already running (PID {pid})")
             return {
                 "status": "already_running",
@@ -110,7 +110,7 @@ class WorkerManager:
             }
 
         # Check concurrency limit
-        running_count = len(self.process_registry.get_running_workers())
+        running_count = len(self.db.get_all_running_workers())
         if running_count >= self.max_concurrent_workers:
             self.logger.warning(
                 f"Cannot start worker {annotator_id}/{domain}: "
@@ -163,12 +163,12 @@ class WorkerManager:
                 cwd=str(self.base_dir)  # Set working directory
             )
 
-            # Store process (backward compatibility)
+            # Store process
             key = (annotator_id, domain)
             self.processes[key] = proc
 
-            # NEW: Register in ProcessRegistry
-            self.process_registry.register_worker(annotator_id, domain, proc.pid)
+            # Register in database
+            self.db.register_worker_process(annotator_id, domain, proc.pid)
 
             self.logger.info(f"Started worker for Annotator {annotator_id}, Domain {domain}, PID: {proc.pid}")
 
@@ -203,17 +203,17 @@ class WorkerManager:
         """
         key = (annotator_id, domain)
 
-        # FIXED: Check ProcessRegistry first for persistent tracking
-        pid = self.process_registry.get_worker_pid(annotator_id, domain)
+        # Check database for worker PID
+        status = self.db.get_worker_status(annotator_id, domain)
+        pid = status.get('pid')
 
         # Check if worker is actually running
-        is_running = self.process_registry.is_worker_actually_running(annotator_id, domain)
+        is_running = status.get('running', False)
 
         if not pid or not is_running:
-            # Cleanup orphaned entry if exists
+            # Cleanup if needed
             if pid:
-                self.process_registry.unregister_worker(annotator_id, domain)
-                self.heartbeat_manager.cleanup_heartbeat(annotator_id, domain)
+                self.db.unregister_worker_process(annotator_id, domain)
 
             return {
                 "status": "not_running",
@@ -288,9 +288,9 @@ class WorkerManager:
                     print(f"✅ Worker already stopped")
                     pass
 
-        # Cleanup ProcessRegistry and heartbeat
-        self.process_registry.unregister_worker(annotator_id, domain)
-        self.heartbeat_manager.cleanup_heartbeat(annotator_id, domain)
+        # Cleanup database registry and heartbeat
+        self.db.unregister_worker_process(annotator_id, domain)
+        self.db.cleanup_heartbeat(annotator_id, domain)
 
         # Delete control file
         try:
@@ -377,61 +377,8 @@ class WorkerManager:
         Returns:
             Status dictionary with comprehensive information
         """
-        # Load progress
-        try:
-            logger = ProgressLogger(annotator_id, domain)
-            progress = logger.load()
-        except Exception as e:
-            return {
-                "annotator_id": annotator_id,
-                "domain": domain,
-                "status": "error",
-                "error": str(e)
-            }
-
-        # NEW: Use ProcessRegistry for accurate process detection
-        pid = progress.get("pid")
-        running = self.process_registry.is_worker_actually_running(annotator_id, domain)
-
-        # NEW: Check heartbeat for additional accuracy
-        heartbeat_alive = self.heartbeat_manager.is_heartbeat_alive(annotator_id, domain)
-
-        # Check if stale using progress file
-        crash_detection_minutes = self.settings["global"]["crash_detection_minutes"]
-        progress_stale = logger.is_stale(minutes=crash_detection_minutes)
-
-        # Determine status with enhanced detection
-        status = progress.get("status", "unknown")
-
-        # If heartbeat is dead and progress says running, mark as crashed
-        if not heartbeat_alive and status == "running" and pid is not None:
-            status = "crashed"
-            running = False
-
-        # If progress is stale and was running, mark as crashed
-        elif progress_stale and status == "running":
-            status = "crashed"
-            running = False
-
-        # If PID exists but process is not actually running, mark as crashed
-        elif pid is not None and not running and status == "running":
-            status = "crashed"
-
-        return {
-            "annotator_id": annotator_id,
-            "domain": domain,
-            "status": status,
-            "running": running,
-            "stale": progress_stale,
-            "progress": {
-                "completed": len(progress.get("completed_ids", [])),
-                "target": progress.get("target_count", 0),
-                "malformed": len(progress.get("malformed_ids", [])),
-                "speed": progress.get("stats", {}).get("samples_per_min", 0.0)
-            },
-            "last_updated": progress.get("last_updated", "unknown"),
-            "pid": progress.get("pid")
-        }
+        # Get status from database
+        return self.db.get_worker_status(annotator_id, domain)
 
     def get_all_statuses(self) -> List[Dict[str, Any]]:
         """
@@ -440,16 +387,8 @@ class WorkerManager:
         Returns:
             List of status dictionaries
         """
-        statuses = []
-
-        domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
-
-        for annotator_id in [1, 2, 3, 4, 5]:
-            for domain in domains:
-                status = self.get_worker_status(annotator_id, domain)
-                statuses.append(status)
-
-        return statuses
+        # Get all statuses from database in one call
+        return self.db.get_all_worker_statuses()
 
     def stop_all_workers(self, timeout: int = 30) -> Dict[str, Any]:
         """
@@ -466,8 +405,8 @@ class WorkerManager:
         """
         print(f"\n⏹️  Stopping all workers...\n")
 
-        # FIXED: Get running workers from ProcessRegistry (persistent)
-        running_workers = self.process_registry.get_running_workers()
+        # Get running workers from database
+        running_workers = self.db.get_all_running_workers()
 
         if not running_workers:
             print("ℹ️  No workers currently running")

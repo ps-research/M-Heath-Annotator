@@ -20,9 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.core.annotator import GeminiAnnotator
 from backend.core.parser import ResponseParser
-from backend.core.progress_logger import ProgressLogger
+from backend.core.db_manager import get_db
 from backend.core.dataset_loader import DatasetLoader
-from backend.core.heartbeat_manager import WorkerHeartbeat
 from backend.core.rate_limiter import RateLimiter
 from backend.core.logger_config import get_worker_logger
 from backend.utils.file_operations import atomic_read_json, atomic_write_json, ensure_directory
@@ -91,16 +90,22 @@ class AnnotationWorker:
         # Initialize components
         self.gemini = GeminiAnnotator(self.api_key, model_name)
         self.parser = ResponseParser()
-        self.progress_logger = ProgressLogger(annotator_id, domain)
 
-        # Initialize NEW systems
-        self.heartbeat = WorkerHeartbeat(annotator_id, domain, interval=30)
+        # Initialize database manager (replaces ProgressLogger, HeartbeatManager, ProcessRegistry)
+        self.db = get_db()
+
+        # Initialize rate limiter
         self.rate_limiter = RateLimiter(
             requests_per_minute=15,
             requests_per_day=1500,
             burst_size=5
         )
         self.api_key_id = f"annotator_{annotator_id}"
+
+        # Heartbeat tracking
+        self.heartbeat_interval = 30  # seconds
+        self.last_heartbeat_time = 0
+        self.iteration_count = 0
 
         # Initialize dataset loader
         dataset_path = self.base_dir / "data" / "source" / "m_help_dataset.xlsx"
@@ -168,12 +173,12 @@ class AnnotationWorker:
         Returns:
             Sample dict with 'id' and 'text', or None if done
         """
-        # Load current progress
-        progress = self.progress_logger.load()
+        # Get current progress from database
+        status = self.db.get_worker_status(self.annotator_id, self.domain)
 
         # Check if target reached
-        completed_count = len(progress["completed_ids"])
-        target_count = progress["target_count"]
+        completed_count = status['total_completed']
+        target_count = status['target_count']
 
         if completed_count >= target_count:
             return None
@@ -239,22 +244,22 @@ class AnnotationWorker:
         Handle pause command - enter wait loop until resumed or stopped.
         """
         self.logger.info("Worker paused")
-        self.progress_logger.update_status("paused")
-        self.heartbeat.send_now("paused")
+        self.db.update_worker_status(self.annotator_id, self.domain, "paused")
+        self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, "paused")
 
         # Enter pause loop
         while True:
             time.sleep(5)  # Check every 5 seconds
 
             # Send heartbeat while paused
-            self.heartbeat.maybe_send("paused")
+            self._send_heartbeat_if_needed("paused")
 
             command = self.check_control_signal()
 
             if command == "resume":
                 self.logger.info("Worker resumed")
-                self.progress_logger.update_status("running")
-                self.heartbeat.send_now("running")
+                self.db.update_worker_status(self.annotator_id, self.domain, "running")
+                self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, "running")
                 self.last_control_check_time = time.time()
                 break
 
@@ -268,9 +273,17 @@ class AnnotationWorker:
         Handle stop command - set flag to exit gracefully.
         """
         self.logger.info("Worker stopping gracefully")
-        self.progress_logger.update_status("stopped")
-        self.heartbeat.send_now("stopped")
+        self.db.update_worker_status(self.annotator_id, self.domain, "stopped")
+        self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, "stopped")
         self.should_stop_flag = True
+
+    def _send_heartbeat_if_needed(self, status: str = "running"):
+        """Send heartbeat if interval has elapsed."""
+        elapsed = time.time() - self.last_heartbeat_time
+
+        if elapsed >= self.heartbeat_interval:
+            self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, status)
+            self.last_heartbeat_time = time.time()
 
     def annotate_sample(self, sample: Dict[str, str], prompt_template: str) -> Dict[str, Any]:
         """
@@ -301,7 +314,7 @@ class AnnotationWorker:
         if error:
             if error == "RATE_LIMIT":
                 print(f"\n❌ Rate limit hit for sample {sample['id']}")
-                self.progress_logger.update_status("paused")
+                self.db.update_worker_status(self.annotator_id, self.domain, "paused")
                 raise Exception("RATE_LIMIT_HIT")
 
             elif error == "INVALID_KEY":
@@ -344,13 +357,16 @@ class AnnotationWorker:
 
     def save_annotation(self, result: Dict[str, Any]) -> None:
         """
-        Save annotation result to JSONL file.
+        Save annotation result to database.
 
         Args:
             result: Annotation result dictionary
         """
         try:
-            # Append to JSONL file
+            # Save to database
+            self.db.save_annotation(self.annotator_id, self.domain, result)
+
+            # Also save to JSONL file for backward compatibility / export
             with open(self.annotations_file_path, 'a') as f:
                 json.dump(result, f)
                 f.write('\n')
@@ -370,21 +386,19 @@ class AnnotationWorker:
         self.logger.info(f"Worker starting for Annotator {self.annotator_id}, Domain {self.domain}")
         self.logger.info("="*70)
 
-        # Initialize
-        progress = self.progress_logger.load()
-        self.progress_logger.update_status("running")
-        self.progress_logger.update_pid(os.getpid())
-        self.progress_logger.set_start_time()
+        # Initialize worker in database
+        self.db.register_worker_process(self.annotator_id, self.domain, os.getpid())
 
         # Start heartbeat
-        self.heartbeat.start()
+        self.db.send_heartbeat(self.annotator_id, self.domain, 0, "running")
+        self.last_heartbeat_time = time.time()
 
         # Load prompt template
         try:
             prompt_template = self.load_prompt()
         except FileNotFoundError as e:
             self.logger.error(str(e))
-            self.progress_logger.update_status("stopped")
+            self.db.update_worker_status(self.annotator_id, self.domain, "stopped")
             return
 
         # Get settings
@@ -393,17 +407,19 @@ class AnnotationWorker:
         # Track start time for speed calculation
         start_time = time.time()
 
-        self.logger.info(f"Target: {progress['target_count']} samples")
-        self.logger.info(f"Already completed: {len(progress['completed_ids'])} samples")
+        # Get current status
+        status = self.db.get_worker_status(self.annotator_id, self.domain)
+
+        self.logger.info(f"Target: {status['target_count']} samples")
+        self.logger.info(f"Already completed: {status['total_completed']} samples")
         self.logger.info("Starting annotation loop...")
 
         # Main loop
         while not self.should_stop_flag:
             self.iteration_count += 1
-            self.heartbeat.increment_iteration()
 
             # Send heartbeat periodically
-            self.heartbeat.maybe_send("running")
+            self._send_heartbeat_if_needed("running")
 
             # Check control signals
             if self.should_check_control():
@@ -424,8 +440,8 @@ class AnnotationWorker:
             if sample is None:
                 # No more samples or target reached
                 self.logger.info("Target reached!")
-                self.progress_logger.update_status("completed")
-                self.heartbeat.send_now("completed")
+                self.db.update_worker_status(self.annotator_id, self.domain, "completed")
+                self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, "completed")
                 break
 
             try:
@@ -435,8 +451,10 @@ class AnnotationWorker:
                 # Save annotation
                 self.save_annotation(result)
 
-                # Update progress
-                self.progress_logger.add_completed(
+                # Update progress in database
+                self.db.add_completed_sample(
+                    self.annotator_id,
+                    self.domain,
                     sample['id'],
                     result['label'],
                     result['malformed']
@@ -451,12 +469,13 @@ class AnnotationWorker:
                 # Update speed every 10 samples
                 if self.iteration_count % 10 == 0:
                     elapsed = time.time() - start_time
-                    progress = self.progress_logger.load()
-                    samples_done = len(progress['completed_ids'])
-                    self.progress_logger.update_speed(samples_done, elapsed)
+                    status = self.db.get_worker_status(self.annotator_id, self.domain)
+                    samples_done = status['total_completed']
 
-                    speed = progress['stats']['samples_per_min']
-                    self.logger.info(f"Speed: {speed:.2f} samples/min")
+                    if elapsed > 0:
+                        samples_per_min = (samples_done / elapsed) * 60
+                        self.db.update_speed(self.annotator_id, self.domain, samples_per_min)
+                        self.logger.info(f"Speed: {samples_per_min:.2f} samples/min")
 
                 # Rate limiting delay
                 time.sleep(request_delay)
@@ -466,13 +485,13 @@ class AnnotationWorker:
 
                 if "RATE_LIMIT" in error_str:
                     self.logger.warning("Paused due to rate limit. Exiting...")
-                    self.heartbeat.send_now("paused")
+                    self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, "paused")
                     break
 
                 elif "INVALID_API_KEY" in error_str:
                     self.logger.error("Invalid API key. Exiting...")
-                    self.progress_logger.update_status("stopped")
-                    self.heartbeat.send_now("stopped")
+                    self.db.update_worker_status(self.annotator_id, self.domain, "stopped")
+                    self.db.send_heartbeat(self.annotator_id, self.domain, self.iteration_count, "stopped")
                     break
 
                 else:
@@ -486,13 +505,13 @@ class AnnotationWorker:
         self.logger.info(f"Worker finished for Annotator {self.annotator_id}, Domain {self.domain}")
         self.logger.info("="*70)
 
-        final_progress = self.progress_logger.load()
-        self.logger.info(f"Completed: {len(final_progress['completed_ids'])} samples")
-        self.logger.info(f"Malformed: {len(final_progress['malformed_ids'])} samples")
-        self.logger.info(f"Final status: {final_progress['status']}")
+        final_status = self.db.get_worker_status(self.annotator_id, self.domain)
+        self.logger.info(f"Completed: {final_status['total_completed']} samples")
+        self.logger.info(f"Malformed: {final_status['total_malformed']} samples")
+        self.logger.info(f"Final status: {final_status['status']}")
 
         # Cleanup heartbeat
-        self.heartbeat.cleanup()
+        self.db.cleanup_heartbeat(self.annotator_id, self.domain)
 
 
 def main():

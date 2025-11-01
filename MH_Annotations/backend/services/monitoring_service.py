@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.core.worker_manager import WorkerManager
+from backend.core.db_manager import get_db
 from backend.utils.file_operations import atomic_read_json
 
 
@@ -19,70 +20,13 @@ class MonitoringService:
     def __init__(self):
         """Initialize monitoring service."""
         self.worker_manager = WorkerManager()
+        self.db = get_db()
         self.base_dir = Path(__file__).parent.parent.parent
         self.domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
 
     def get_system_overview(self) -> Dict[str, Any]:
-        """Get high-level system statistics."""
-        all_statuses = self.worker_manager.get_all_statuses()
-
-        total_workers = 30
-        enabled_workers = 0
-        running_workers = 0
-        paused_workers = 0
-        completed_workers = 0
-        crashed_workers = 0
-        
-        total_completed = 0
-        total_target = 0
-        speeds = []
-
-        for status in all_statuses:
-            if status.get("status") == "running":
-                running_workers += 1
-            elif status.get("status") == "paused":
-                paused_workers += 1
-            elif status.get("status") == "completed":
-                completed_workers += 1
-            elif status.get("status") == "crashed" or status.get("stale"):
-                crashed_workers += 1
-
-            progress = status.get("progress", {})
-            total_completed += progress.get("completed", 0)
-            total_target += progress.get("target", 0)
-            speed = progress.get("speed", 0.0)
-            if speed > 0:
-                speeds.append(speed)
-
-        avg_speed = sum(speeds) / len(speeds) if speeds else 0.0
-
-        # Estimate remaining time
-        remaining_samples = total_target - total_completed
-        if avg_speed > 0:
-            remaining_minutes = remaining_samples / avg_speed
-            hours = int(remaining_minutes // 60)
-            minutes = int(remaining_minutes % 60)
-            est_time = f"{hours}h {minutes}m"
-        else:
-            est_time = "Unknown"
-
-        total_percentage = (total_completed / total_target * 100) if total_target > 0 else 0.0
-
-        return {
-            "total_workers": total_workers,
-            "enabled_workers": enabled_workers,
-            "running_workers": running_workers,
-            "paused_workers": paused_workers,
-            "completed_workers": completed_workers,
-            "crashed_workers": crashed_workers,
-            "total_progress": {
-                "completed": total_completed,
-                "target": total_target,
-                "percentage": round(total_percentage, 2)
-            },
-            "avg_speed": round(avg_speed, 2),
-            "estimated_time_remaining": est_time
-        }
+        """Get high-level system statistics from database."""
+        return self.db.get_system_overview()
 
     def get_all_worker_statuses(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Get status of all workers with optional filters."""
@@ -112,39 +56,45 @@ class MonitoringService:
         return self.worker_manager.get_worker_status(annotator_id, domain)
 
     def check_health(self) -> Dict[str, Any]:
-        """Detect crashed/stalled workers."""
-        all_statuses = self.worker_manager.get_all_statuses()
+        """Detect crashed/stalled workers using database."""
+        # Get stuck workers from database (heartbeat-based)
+        stuck_workers = self.db.get_stuck_workers()
 
         crashed = []
+        for worker in stuck_workers:
+            crashed.append({
+                "annotator_id": worker['annotator_id'],
+                "domain": worker['domain'],
+                "last_heartbeat": worker.get('heartbeat_time', 'unknown'),
+                "minutes_ago": round(worker.get('minutes_ago', 0), 2)
+            })
+
+        # Get all statuses for stalled detection
+        all_statuses = self.worker_manager.get_all_statuses()
+
         stalled = []
         healthy = 0
 
         # Calculate average speed
-        speeds = [s.get("progress", {}).get("speed", 0.0) for s in all_statuses]
+        speeds = [s.get("progress", {}).get("speed", 0.0) for s in all_statuses if s.get("status") == "running"]
         speeds = [s for s in speeds if s > 0]
         avg_speed = sum(speeds) / len(speeds) if speeds else 1.0
 
         for status in all_statuses:
+            if status.get("status") != "running":
+                continue
+
             annotator_id = status.get("annotator_id")
             domain = status.get("domain")
-            is_stale = status.get("stale", False)
             speed = status.get("progress", {}).get("speed", 0.0)
 
-            # Crashed workers
-            if is_stale and status.get("status") == "running":
-                crashed.append({
-                    "annotator_id": annotator_id,
-                    "domain": domain,
-                    "last_update": status.get("last_updated", "unknown"),
-                    "stale_minutes": 5  # From settings
-                })
-            # Stalled workers
-            elif speed > 0 and speed < avg_speed * 0.5:
+            # Stalled workers (running but slow)
+            if speed > 0 and speed < avg_speed * 0.5:
                 stalled.append({
                     "annotator_id": annotator_id,
                     "domain": domain,
                     "speed": speed,
-                    "expected_speed": avg_speed
+                    "expected_speed": round(avg_speed, 2)
                 })
             else:
                 healthy += 1

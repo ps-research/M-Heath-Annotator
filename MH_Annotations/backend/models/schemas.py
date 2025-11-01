@@ -108,9 +108,9 @@ class Settings(BaseModel):
 class ConfigUpdate(BaseModel):
     """Request to update global settings."""
     model_name: Optional[str] = None
-    request_delay_seconds: Optional[int] = Field(None, ge=0, le=60)
+    request_delay_seconds: Optional[float] = Field(None, ge=0, le=60)
     max_retries: Optional[int] = Field(None, ge=0, le=10)
-    crash_detection_minutes: Optional[int] = Field(None, ge=1, le=60)
+    crash_detection_minutes: Optional[float] = Field(None, ge=1, le=60)
     control_check_iterations: Optional[int] = Field(None, ge=1, le=20)
     control_check_seconds: Optional[int] = Field(None, ge=1, le=60)
 

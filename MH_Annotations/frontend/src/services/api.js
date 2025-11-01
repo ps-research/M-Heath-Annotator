@@ -105,9 +105,10 @@ export const configAPI = {
     api.delete(`/api/config/prompts/${annotatorId}/${domain}`),
 
   getDomainConfig: (annotatorId, domain) =>
-    api.get(`/api/config/annotators/${annotatorId}/${domain}`),
+    api.get(`/api/config/annotators/${annotatorId}/domains/${domain}`),
+
   updateDomainConfig: (annotatorId, domain, config) =>
-    api.put(`/api/config/annotators/${annotatorId}/${domain}`, config),
+    api.put(`/api/config/annotators/${annotatorId}/domains/${domain}`, config),
 
   // Phase 3 - Version Management
   savePromptVersion: (annotatorId, domain, versionName, content, description) =>

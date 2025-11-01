@@ -289,10 +289,25 @@ class WorkerManager:
                 "error": str(e)
             }
 
-        # Check if process is running
-        key = (annotator_id, domain)
+        # Check if process is running using PID from progress file
+        pid = progress.get("pid")
         running = False
 
+        if pid is not None:
+            try:
+                # Use os.kill with signal 0 to check if process exists
+                # This doesn't actually kill the process, just checks existence
+                os.kill(pid, 0)
+                running = True
+            except (OSError, ProcessLookupError):
+                # Process doesn't exist
+                running = False
+            except Exception:
+                # Any other error, assume not running
+                running = False
+
+        # Also check in-memory process tracking for recently started workers
+        key = (annotator_id, domain)
         if key in self.processes:
             proc = self.processes[key]
             if proc.poll() is None:  # Still alive
@@ -300,7 +315,6 @@ class WorkerManager:
             else:
                 # Process died, remove from dict
                 del self.processes[key]
-                running = False
 
         # Check if stale
         crash_detection_minutes = self.settings["global"]["crash_detection_minutes"]
@@ -311,6 +325,11 @@ class WorkerManager:
 
         # If stale and was running, mark as crashed
         if stale and status == "running":
+            status = "crashed"
+            running = False
+
+        # If PID exists but process is not running, and status was running, mark as crashed
+        if pid is not None and not running and status == "running":
             status = "crashed"
 
         return {

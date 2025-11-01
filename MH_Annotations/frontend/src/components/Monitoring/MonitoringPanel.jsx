@@ -1,167 +1,207 @@
-import React, { useEffect } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Typography,
-  Paper,
   Grid,
-  Card,
-  CardContent,
+  Paper,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Chip,
+  Alert,
 } from '@mui/material';
-import {
-  Group as GroupIcon,
-  PlayArrow as PlayArrowIcon,
-  Speed as SpeedIcon,
-  Timer as TimerIcon,
-} from '@mui/icons-material';
-import {
-  fetchOverview,
-  fetchHealth,
-  selectOverview,
-  selectHealth,
-  selectIsLoading,
-} from '../../store/slices/monitoringSlice';
-import { LoadingSpinner, ErrorAlert } from '../Common';
-import { formatSpeed, formatDurationSeconds, formatNumber } from '../../utils/formatters';
+import { monitoringAPI } from '../../services/api';
+import { LoadingSpinner } from '../Common';
+import WorkerCard from './WorkerCard';
+import AnnotationsViewerDialog from './AnnotationsViewerDialog';
 
-/**
- * Overview card component
- */
-const OverviewCard = ({ title, value, icon, color = 'primary' }) => (
-  <Card>
-    <CardContent>
-      <Box display="flex" alignItems="center" justifyContent="space-between">
-        <Box>
-          <Typography color="text.secondary" gutterBottom variant="body2">
-            {title}
-          </Typography>
-          <Typography variant="h4" component="div">
-            {value}
-          </Typography>
-        </Box>
-        <Box
-          sx={{
-            backgroundColor: `${color}.light`,
-            color: `${color}.main`,
-            p: 1.5,
-            borderRadius: 2,
-          }}
-        >
-          {icon}
-        </Box>
-      </Box>
-    </CardContent>
-  </Card>
-);
-
-/**
- * Monitoring Panel component
- */
 const MonitoringPanel = () => {
-  const dispatch = useDispatch();
-  const overview = useSelector(selectOverview);
-  const health = useSelector(selectHealth);
-  const loading = useSelector(selectIsLoading);
+  const [workers, setWorkers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterAnnotator, setFilterAnnotator] = useState('all');
+  const [pollingInterval, setPollingInterval] = useState(null);
+  const [selectedWorker, setSelectedWorker] = useState(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
+  // Load workers on mount
   useEffect(() => {
-    // Fetch initial data
-    dispatch(fetchOverview());
-    dispatch(fetchHealth());
+    loadWorkers();
+    startPolling();
 
-    // Set up polling
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
+  const loadWorkers = async () => {
+    try {
+      setLoading(true);
+      const data = await monitoringAPI.getWorkers();
+      setWorkers(data || []);
+    } catch (error) {
+      console.error('Failed to load workers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startPolling = () => {
+    // Poll every 2 seconds
     const interval = setInterval(() => {
-      dispatch(fetchOverview());
-      dispatch(fetchHealth());
-    }, 10000); // Refresh every 10 seconds
+      loadWorkersQuiet();
+    }, 2000);
+    setPollingInterval(interval);
+  };
 
-    return () => clearInterval(interval);
-  }, [dispatch]);
+  const loadWorkersQuiet = async () => {
+    try {
+      const data = await monitoringAPI.getWorkers();
+      setWorkers(data || []);
+    } catch (error) {
+      console.error('Failed to poll workers:', error);
+    }
+  };
 
-  if (loading.overview) {
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  };
+
+  const handleViewAnnotations = (worker) => {
+    setSelectedWorker(worker);
+    setViewerOpen(true);
+  };
+
+  const handleCloseViewer = () => {
+    setViewerOpen(false);
+    setSelectedWorker(null);
+  };
+
+  // Filter workers
+  const filteredWorkers = workers.filter((worker) => {
+    if (filterStatus !== 'all' && worker.status !== filterStatus) {
+      return false;
+    }
+    if (filterAnnotator !== 'all' && worker.annotator_id !== parseInt(filterAnnotator)) {
+      return false;
+    }
+    return true;
+  });
+
+  // Calculate statistics
+  const stats = {
+    total: workers.length,
+    running: workers.filter((w) => w.running).length,
+    paused: workers.filter((w) => w.status === 'paused').length,
+    completed: workers.filter((w) => w.status === 'completed').length,
+    crashed: workers.filter((w) => w.status === 'crashed' || w.stale).length,
+  };
+
+  if (loading) {
     return <LoadingSpinner message="Loading monitoring data..." />;
   }
 
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Monitoring Dashboard
+        Worker Monitoring
       </Typography>
 
-      {/* Overview Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <OverviewCard
-            title="Total Workers"
-            value={overview.total_workers || 0}
-            icon={<GroupIcon />}
-            color="primary"
-          />
+      {/* Statistics Bar */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={2}>
+            <Typography variant="h6">Total Workers</Typography>
+            <Typography variant="h4">{stats.total}</Typography>
+          </Grid>
+          <Grid item xs={6} md={2}>
+            <Chip label={`Running: ${stats.running}`} color="success" sx={{ width: '100%' }} />
+          </Grid>
+          <Grid item xs={6} md={2}>
+            <Chip label={`Paused: ${stats.paused}`} color="warning" sx={{ width: '100%' }} />
+          </Grid>
+          <Grid item xs={6} md={2}>
+            <Chip label={`Completed: ${stats.completed}`} color="info" sx={{ width: '100%' }} />
+          </Grid>
+          <Grid item xs={6} md={2}>
+            <Chip label={`Crashed: ${stats.crashed}`} color="error" sx={{ width: '100%' }} />
+          </Grid>
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <OverviewCard
-            title="Running Workers"
-            value={overview.running_workers || 0}
-            icon={<PlayArrowIcon />}
-            color="success"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <OverviewCard
-            title="Avg Speed"
-            value={formatSpeed(overview.avg_speed || 0)}
-            icon={<SpeedIcon />}
-            color="info"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <OverviewCard
-            title="ETA"
-            value={
-              overview.estimated_time_remaining
-                ? formatDurationSeconds(overview.estimated_time_remaining)
-                : 'N/A'
-            }
-            icon={<TimerIcon />}
-            color="warning"
-          />
-        </Grid>
-      </Grid>
-
-      {/* Progress Overview */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Overall Progress
-        </Typography>
-        <Typography variant="body1">
-          Completed: {formatNumber(overview.total_progress?.completed || 0)} /{' '}
-          {formatNumber(overview.total_progress?.target || 0)} (
-          {(overview.total_progress?.percentage || 0).toFixed(1)}%)
-        </Typography>
       </Paper>
 
-      {/* Health Status */}
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          System Health
-        </Typography>
+      {/* Filters */}
+      <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={4}>
-            <Typography color="success.main">
-              Healthy: {health.healthy || 0}
-            </Typography>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Filter by Status</InputLabel>
+              <Select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                label="Filter by Status"
+              >
+                <MenuItem value="all">All Statuses</MenuItem>
+                <MenuItem value="not_started">Not Started</MenuItem>
+                <MenuItem value="running">Running</MenuItem>
+                <MenuItem value="paused">Paused</MenuItem>
+                <MenuItem value="stopped">Stopped</MenuItem>
+                <MenuItem value="completed">Completed</MenuItem>
+                <MenuItem value="crashed">Crashed</MenuItem>
+              </Select>
+            </FormControl>
           </Grid>
-          <Grid item xs={12} sm={4}>
-            <Typography color="warning.main">
-              Stalled: {health.stalled?.length || 0}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} sm={4}>
-            <Typography color="error.main">
-              Crashed: {health.crashed?.length || 0}
-            </Typography>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Filter by Annotator</InputLabel>
+              <Select
+                value={filterAnnotator}
+                onChange={(e) => setFilterAnnotator(e.target.value)}
+                label="Filter by Annotator"
+              >
+                <MenuItem value="all">All Annotators</MenuItem>
+                <MenuItem value="1">Annotator 1</MenuItem>
+                <MenuItem value="2">Annotator 2</MenuItem>
+                <MenuItem value="3">Annotator 3</MenuItem>
+                <MenuItem value="4">Annotator 4</MenuItem>
+                <MenuItem value="5">Annotator 5</MenuItem>
+              </Select>
+            </FormControl>
           </Grid>
         </Grid>
       </Paper>
+
+      {/* Worker Grid */}
+      {filteredWorkers.length === 0 ? (
+        <Alert severity="info">No workers match the selected filters</Alert>
+      ) : (
+        <Grid container spacing={2}>
+          {filteredWorkers.map((worker) => (
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={4}
+              lg={3}
+              key={`${worker.annotator_id}-${worker.domain}`}
+            >
+              <WorkerCard worker={worker} onViewAnnotations={handleViewAnnotations} />
+            </Grid>
+          ))}
+        </Grid>
+      )}
+
+      {/* Annotations Viewer Dialog */}
+      {selectedWorker && (
+        <AnnotationsViewerDialog
+          open={viewerOpen}
+          onClose={handleCloseViewer}
+          worker={selectedWorker}
+        />
+      )}
     </Box>
   );
 };

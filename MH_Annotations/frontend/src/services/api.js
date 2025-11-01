@@ -193,6 +193,8 @@ export const monitoringAPI = {
 export const dataAPI = {
   getAnnotations: (filters = {}) =>
     api.get('/api/data/annotations', { params: filters }),
+  getWorkerAnnotations: (annotatorId, domain, limit = 100) =>
+    api.get(`/api/data/annotations/${annotatorId}/${domain}`, { params: { limit } }),
   getAnnotation: (annotatorId, domain, sampleId) =>
     api.get(`/api/data/annotations/${annotatorId}/${domain}/${sampleId}`),
 

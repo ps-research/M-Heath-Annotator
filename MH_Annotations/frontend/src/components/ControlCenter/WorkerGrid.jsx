@@ -57,20 +57,24 @@ const WorkerGrid = ({ workers, onPause, onResume, onTerminate, loading }) => {
   };
 
   const calculateProgress = (worker) => {
-    if (!worker.progress?.target_count || worker.progress.target_count === 0) {
+    // Progress structure from backend:
+    // worker.progress = { completed, target, malformed, speed }
+    const target = worker.progress?.target || 0;
+    if (target === 0) {
       return 0;
     }
-    const completed = worker.progress?.completed_ids?.length || 0;
-    return Math.min((completed / worker.progress.target_count) * 100, 100);
+    const completed = worker.progress?.completed || 0;
+    return Math.min((completed / target) * 100, 100);
   };
 
   return (
     <Grid container spacing={2}>
       {workers.map((worker) => {
         const progress = calculateProgress(worker);
-        const completed = worker.progress?.completed_ids?.length || 0;
-        const target = worker.progress?.target_count || 0;
-        const speed = worker.progress?.stats?.samples_per_min || 0;
+        // Backend progress structure: { completed, target, malformed, speed }
+        const completed = worker.progress?.completed || 0;
+        const target = worker.progress?.target || 0;
+        const speed = worker.progress?.speed || 0;
         const isRunning = worker.running && worker.status === 'running';
         const isPaused = worker.status === 'paused';
 

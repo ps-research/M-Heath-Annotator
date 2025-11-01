@@ -86,9 +86,21 @@ const ControlCenterPanel = () => {
     try {
       // Get all workers without status filter, then filter on frontend
       const allWorkers = await monitoringAPI.getWorkers();
+
+      // Filter for active workers
+      // A worker is active if:
+      // 1. The process is running (worker.running === true), OR
+      // 2. The status is 'running' or 'paused', OR
+      // 3. The worker has a PID (recently started but progress file not yet updated)
       const activeWorkers = (allWorkers || []).filter(
-        worker => worker.status === 'running' || worker.status === 'paused'
+        worker => {
+          return worker.running === true ||
+                 worker.status === 'running' ||
+                 worker.status === 'paused' ||
+                 (worker.progress && worker.progress.pid);
+        }
       );
+
       setActiveWorkers(activeWorkers);
       return activeWorkers;
     } catch (error) {

@@ -257,3 +257,49 @@ class ActiveVersionUpdate(BaseModel):
             if not v.startswith('v') or not v.endswith('.txt'):
                 raise ValueError('Invalid filename format')
         return v
+
+
+# ===========================
+# Control Center - Run Management Schemas
+# ===========================
+
+class RunStartRequest(BaseModel):
+    """Request to start a new run."""
+    validate_only: bool = False  # If true, only validate without starting
+
+
+class RunStartValidation(BaseModel):
+    """Validation result for starting a run."""
+    valid: bool
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    enabled_workers: List[Dict[str, Any]] = Field(default_factory=list)  # [{annotator_id, domain, has_api_key, has_prompt}]
+
+
+class FactoryResetRequest(BaseModel):
+    """Request for factory reset - requires explicit confirmation."""
+    confirmation_text: str
+
+    @field_validator('confirmation_text')
+    @classmethod
+    def validate_confirmation(cls, v):
+        if v != "DELETE EVERYTHING":
+            raise ValueError("Confirmation text must be exactly 'DELETE EVERYTHING'")
+        return v
+
+
+class WorkerGridStatus(BaseModel):
+    """Status for displaying in worker grid."""
+    annotator_id: int
+    domain: str
+    status: str  # running, paused, stopped, completed, crashed, not_started
+    progress_percentage: float
+    completed_count: int
+    target_count: int
+    malformed_count: int
+    speed: float  # samples per minute
+    eta_seconds: Optional[int]  # estimated time remaining
+    is_running: bool
+    is_stale: bool
+    last_updated: str
+    pid: Optional[int]

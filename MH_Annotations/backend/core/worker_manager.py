@@ -364,7 +364,7 @@ class WorkerManager:
             "domain": domain,
             "status": status,
             "running": running,
-            "stale": stale,
+            "stale": progress_stale,
             "progress": {
                 "completed": len(progress.get("completed_ids", [])),
                 "target": progress.get("target_count", 0),

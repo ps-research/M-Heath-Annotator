@@ -151,19 +151,6 @@ export const controlAPI = {
 
   restartWorker: (annotatorId, domain) =>
     api.post(`/api/control/restart/${annotatorId}/${domain}`),
-
-  // Run management
-  validateRunStart: () => api.post('/api/control/run/validate'),
-  startRun: (validateOnly = false) =>
-    api.post('/api/control/run/start', { validate_only: validateOnly }),
-
-  // Reset operations
-  resetCurrentRun: () => api.post('/api/control/reset/current-run'),
-  factoryReset: (confirmationText) =>
-    api.post('/api/control/reset/factory', { confirmation_text: confirmationText }),
-
-  // Grid status
-  getWorkersGridStatus: () => api.get('/api/control/workers/grid-status'),
 };
 
 // Monitoring API

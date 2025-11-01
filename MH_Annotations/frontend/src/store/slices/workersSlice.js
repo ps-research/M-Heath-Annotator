@@ -4,10 +4,7 @@ import { controlAPI, monitoringAPI } from '../../services/api';
 // Initial state
 const initialState = {
   workers: [], // Array of worker status objects
-  gridWorkers: [], // For grid view
   selectedWorkers: [], // Array of {annotator_id, domain} for bulk operations
-  runValidation: null, // Validation result
-  viewMode: 'initial', // 'initial' | 'grid' | 'loading'
   loading: {
     start: false,
     stop: false,
@@ -16,8 +13,6 @@ const initialState = {
     reset: false,
     restart: false,
     fetch: false,
-    validate: false,
-    grid: false,
   },
   errors: {
     start: null,
@@ -27,7 +22,6 @@ const initialState = {
     reset: null,
     restart: null,
     fetch: null,
-    validate: null,
   },
 };
 
@@ -181,67 +175,6 @@ export const restartWorker = createAsyncThunk(
   async ({ annotatorId, domain }, { rejectWithValue }) => {
     try {
       const data = await controlAPI.restartWorker(annotatorId, domain);
-      return data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-// Run management thunks
-export const validateRunStart = createAsyncThunk(
-  'workers/validateRunStart',
-  async (_, { rejectWithValue }) => {
-    try {
-      const data = await controlAPI.validateRunStart();
-      return data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-export const startRun = createAsyncThunk(
-  'workers/startRun',
-  async (validateOnly = false, { rejectWithValue }) => {
-    try {
-      const data = await controlAPI.startRun(validateOnly);
-      return data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-export const resetCurrentRun = createAsyncThunk(
-  'workers/resetCurrentRun',
-  async (_, { rejectWithValue }) => {
-    try {
-      const data = await controlAPI.resetCurrentRun();
-      return data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-export const factoryReset = createAsyncThunk(
-  'workers/factoryReset',
-  async (confirmationText, { rejectWithValue }) => {
-    try {
-      const data = await controlAPI.factoryReset(confirmationText);
-      return data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-export const fetchGridStatus = createAsyncThunk(
-  'workers/fetchGridStatus',
-  async (_, { rejectWithValue }) => {
-    try {
-      const data = await controlAPI.getWorkersGridStatus();
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -411,85 +344,6 @@ const workersSlice = createSlice({
         state.loading.restart = false;
         state.errors.restart = action.payload;
       });
-
-    // Validate Run Start
-    builder
-      .addCase(validateRunStart.pending, (state) => {
-        state.loading.validate = true;
-        state.errors.validate = null;
-      })
-      .addCase(validateRunStart.fulfilled, (state, action) => {
-        state.loading.validate = false;
-        state.runValidation = action.payload;
-      })
-      .addCase(validateRunStart.rejected, (state, action) => {
-        state.loading.validate = false;
-        state.errors.validate = action.payload;
-      });
-
-    // Start Run
-    builder
-      .addCase(startRun.pending, (state) => {
-        state.loading.start = true;
-        state.errors.start = null;
-        state.viewMode = 'loading';
-      })
-      .addCase(startRun.fulfilled, (state, action) => {
-        state.loading.start = false;
-        state.viewMode = 'grid';
-        state.runValidation = action.payload.data?.validation;
-      })
-      .addCase(startRun.rejected, (state, action) => {
-        state.loading.start = false;
-        state.errors.start = action.payload;
-        state.viewMode = 'initial';
-      });
-
-    // Reset Current Run
-    builder
-      .addCase(resetCurrentRun.pending, (state) => {
-        state.loading.reset = true;
-        state.errors.reset = null;
-      })
-      .addCase(resetCurrentRun.fulfilled, (state) => {
-        state.loading.reset = false;
-        state.viewMode = 'initial';
-        state.gridWorkers = [];
-      })
-      .addCase(resetCurrentRun.rejected, (state, action) => {
-        state.loading.reset = false;
-        state.errors.reset = action.payload;
-      });
-
-    // Factory Reset
-    builder
-      .addCase(factoryReset.pending, (state) => {
-        state.loading.reset = true;
-        state.errors.reset = null;
-      })
-      .addCase(factoryReset.fulfilled, (state) => {
-        state.loading.reset = false;
-        state.viewMode = 'initial';
-        state.gridWorkers = [];
-      })
-      .addCase(factoryReset.rejected, (state, action) => {
-        state.loading.reset = false;
-        state.errors.reset = action.payload;
-      });
-
-    // Fetch Grid Status
-    builder
-      .addCase(fetchGridStatus.pending, (state) => {
-        state.loading.grid = true;
-      })
-      .addCase(fetchGridStatus.fulfilled, (state, action) => {
-        state.loading.grid = false;
-        state.gridWorkers = action.payload;
-      })
-      .addCase(fetchGridStatus.rejected, (state, action) => {
-        state.loading.grid = false;
-        state.errors.fetch = action.payload;
-      });
   },
 });
 
@@ -522,10 +376,5 @@ export const selectCrashedWorkers = (state) =>
 export const selectSelectedWorkers = (state) => state.workers.selectedWorkers;
 export const selectIsLoading = (state) => state.workers.loading;
 export const selectErrors = (state) => state.workers.errors;
-
-// New selectors for Control Center
-export const selectViewMode = (state) => state.workers.viewMode;
-export const selectGridWorkers = (state) => state.workers.gridWorkers;
-export const selectRunValidation = (state) => state.workers.runValidation;
 
 export default workersSlice.reducer;

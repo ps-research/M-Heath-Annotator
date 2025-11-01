@@ -3,6 +3,9 @@ Worker process management service.
 """
 
 import shutil
+import time
+import logging
+import logging.handlers
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -10,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.core.worker_manager import WorkerManager
+from backend.utils.file_operations import atomic_write_json
 
 
 class WorkerService:
@@ -129,7 +133,11 @@ class WorkerService:
         return results
 
     def reset_data(self, scope: str, annotator_id: Optional[int] = None, domain: Optional[str] = None) -> Dict[str, Any]:
-        """Reset annotation data."""
+        """
+        Reset annotation data.
+
+        FIXED: Now properly closes log files, clears ProcessRegistry, and handles locked files.
+        """
         deleted_files = []
         deleted_workers = 0
         deleted_samples = 0
@@ -155,34 +163,116 @@ class WorkerService:
                 deleted_files.append(str(control_file.relative_to(self.base_dir)))
 
         elif scope == "all":
-            # Delete all annotations
+            print("🧹 FACTORY RESET: Cleaning up system state...")
+
+            # FIXED: Step 1 - Close all log file handlers to release locks
+            print("   Closing all log file handlers...")
+            loggers_to_close = []
+            for name in list(logging.Logger.manager.loggerDict.keys()):
+                if name.startswith("worker.") or name in ["worker_manager", "watchdog", "api", "gemini_api"]:
+                    logger = logging.getLogger(name)
+                    loggers_to_close.append(logger)
+
+            # Close all file handlers
+            for logger in loggers_to_close:
+                for handler in logger.handlers[:]:
+                    if isinstance(handler, logging.handlers.RotatingFileHandler):
+                        try:
+                            handler.close()
+                            logger.removeHandler(handler)
+                        except:
+                            pass
+
+            print("   ✓ Log handlers closed")
+
+            # Step 2 - Delete all annotations
+            print("   Deleting annotations...")
             ann_base = self.base_dir / "data" / "annotations"
             if ann_base.exists():
-                for f in ann_base.rglob("*"):
-                    if f.is_file():
-                        deleted_files.append(str(f.relative_to(self.base_dir)))
-                shutil.rmtree(ann_base)
-                ann_base.mkdir(parents=True, exist_ok=True)
-                deleted_workers = 30
+                try:
+                    for f in ann_base.rglob("*"):
+                        if f.is_file():
+                            deleted_files.append(str(f.relative_to(self.base_dir)))
+                    shutil.rmtree(ann_base)
+                    ann_base.mkdir(parents=True, exist_ok=True)
+                    deleted_workers = 30
+                    print("   ✓ Annotations deleted")
+                except OSError as e:
+                    print(f"   ⚠️  Error deleting annotations: {e}")
 
-            # Delete all logs
+            # Step 3 - Delete all logs (with retry for locked files)
+            print("   Deleting logs...")
             logs_dir = self.base_dir / "data" / "logs"
             if logs_dir.exists():
-                for f in logs_dir.rglob("*"):
-                    if f.is_file():
-                        deleted_files.append(str(f.relative_to(self.base_dir)))
-                shutil.rmtree(logs_dir)
-                logs_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    # Give OS time to release file handles
+                    time.sleep(1)
+                    for f in logs_dir.rglob("*"):
+                        if f.is_file():
+                            deleted_files.append(str(f.relative_to(self.base_dir)))
+                    shutil.rmtree(logs_dir)
+                    logs_dir.mkdir(parents=True, exist_ok=True)
+                    print("   ✓ Logs deleted")
+                except OSError as e:
+                    print(f"   ⚠️  Error deleting logs (files may be locked): {e}")
+                    # Try individual file deletion
+                    for f in logs_dir.rglob("*"):
+                        if f.is_file():
+                            try:
+                                f.unlink()
+                            except:
+                                pass
 
-            # Delete all control files
+            # Step 4 - Delete all control files
+            print("   Deleting control files...")
             control_dir = self.base_dir / "control"
             if control_dir.exists():
                 for f in control_dir.glob("*.json"):
-                    f.unlink()
-                    deleted_files.append(str(f.relative_to(self.base_dir)))
+                    try:
+                        f.unlink()
+                        deleted_files.append(str(f.relative_to(self.base_dir)))
+                    except:
+                        pass
+                print("   ✓ Control files deleted")
+
+            # FIXED: Step 5 - Clear ProcessRegistry
+            print("   Clearing ProcessRegistry...")
+            from backend.core.process_registry import ProcessRegistry
+            process_registry = ProcessRegistry()
+            registry_path = process_registry.registry_path
+            if registry_path.exists():
+                try:
+                    atomic_write_json({}, str(registry_path))
+                    print("   ✓ ProcessRegistry cleared")
+                except Exception as e:
+                    print(f"   ⚠️  Error clearing ProcessRegistry: {e}")
+
+            # FIXED: Step 6 - Clear heartbeats directory
+            print("   Clearing heartbeats...")
+            heartbeats_dir = self.base_dir / "data" / "heartbeats"
+            if heartbeats_dir.exists():
+                try:
+                    shutil.rmtree(heartbeats_dir)
+                    heartbeats_dir.mkdir(parents=True, exist_ok=True)
+                    print("   ✓ Heartbeats cleared")
+                except OSError as e:
+                    print(f"   ⚠️  Error deleting heartbeats: {e}")
+
+            # FIXED: Step 7 - Clear rate limiter state
+            print("   Clearing rate limiter state...")
+            rate_limiter_dir = self.base_dir / "data" / "rate_limiter"
+            if rate_limiter_dir.exists():
+                try:
+                    shutil.rmtree(rate_limiter_dir)
+                    rate_limiter_dir.mkdir(parents=True, exist_ok=True)
+                    print("   ✓ Rate limiter state cleared")
+                except OSError as e:
+                    print(f"   ⚠️  Error deleting rate limiter state: {e}")
+
+            print("🎉 Factory reset complete!")
 
         return {
             "deleted_workers": deleted_workers,
-            "deleted_samples": deleted_samples,  # Would need to count lines in JSONL
+            "deleted_samples": deleted_samples,
             "deleted_files": deleted_files
         }

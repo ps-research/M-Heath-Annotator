@@ -177,7 +177,11 @@ async def get_annotator_summary(annotator_id: int):
 
 @router.post("/factory-reset")
 async def factory_reset(confirmation: str):
-    """Factory reset - deletes ALL data including annotations, progress, logs, and control files. DESTRUCTIVE!"""
+    """
+    Factory reset - deletes ALL data including annotations, progress, logs, and control files. DESTRUCTIVE!
+
+    FIXED: Now verifies all workers are stopped and force-kills stubborn processes.
+    """
     if confirmation != "FACTORY_RESET":
         raise HTTPException(
             status_code=400,
@@ -185,11 +189,66 @@ async def factory_reset(confirmation: str):
         )
 
     try:
-        # First stop all workers
-        worker_service.stop_workers({}, timeout=30)
+        import os
+        import signal
+        import time
+        from backend.core.process_registry import ProcessRegistry
 
-        # Then perform complete data deletion
+        print("\n" + "="*70)
+        print("🔴 FACTORY RESET INITIATED")
+        print("="*70)
+
+        # Step 1: Stop all workers
+        print("\n🛑 Step 1/3: Stopping all workers...")
+        stop_result = worker_service.stop_workers({}, timeout=30)
+        print(f"   Stop result: {stop_result}")
+
+        # Step 2: Verify all workers stopped (with force kill if needed)
+        print("\n🔍 Step 2/3: Verifying workers stopped...")
+        registry = ProcessRegistry()
+
+        # Wait up to 10 seconds for workers to fully stop
+        for attempt in range(10):
+            running = registry.get_running_workers()
+            if not running:
+                print("   ✅ All workers stopped successfully")
+                break
+            print(f"   ⏳ Waiting for {len(running)} workers to stop... (attempt {attempt+1}/10)")
+            time.sleep(1)
+
+        # Force kill any remaining workers
+        running = registry.get_running_workers()
+        if running:
+            print(f"\n   ⚠️  {len(running)} stubborn workers detected. Force killing...")
+            for worker in running:
+                pid = worker['pid']
+                ann_id = worker['annotator_id']
+                domain = worker['domain']
+                try:
+                    print(f"      Killing worker {ann_id}/{domain} (PID {pid})...")
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    print(f"      Worker {ann_id}/{domain} already dead")
+                except Exception as e:
+                    print(f"      Error killing worker {ann_id}/{domain}: {e}")
+
+            # Wait a moment for processes to die
+            time.sleep(2)
+
+            # Final check
+            running = registry.get_running_workers()
+            if running:
+                print(f"   ❌ WARNING: {len(running)} workers still running after force kill!")
+            else:
+                print("   ✅ All stubborn workers killed")
+
+        # Step 3: Delete all data
+        print("\n🗑️  Step 3/3: Deleting all data...")
         result = worker_service.reset_data(scope="all")
+
+        print("\n" + "="*70)
+        print("✅ FACTORY RESET COMPLETED SUCCESSFULLY")
+        print("="*70 + "\n")
 
         return APIResponse(
             success=True,
@@ -197,4 +256,5 @@ async def factory_reset(confirmation: str):
             message="Factory reset completed - all data has been deleted"
         )
     except Exception as e:
+        print(f"\n❌ FACTORY RESET FAILED: {e}\n")
         raise HTTPException(status_code=500, detail=str(e))

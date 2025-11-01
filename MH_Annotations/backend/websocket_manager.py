@@ -61,37 +61,40 @@ class WebSocketManager:
             print(f"Error sending initial state: {e}")
 
     async def broadcast_updates(self):
-        """Background task to broadcast updates every 2 seconds."""
+        """
+        Background task to broadcast updates every 2 seconds.
+
+        FIXED: Always sends updates instead of comparing state to ensure cards always refresh.
+        """
         while True:
             try:
                 await asyncio.sleep(2)
-                
+
                 if not self.active_connections:
                     continue
-                
+
                 # Get current state
                 overview = self.monitoring_service.get_system_overview()
                 workers = self.monitoring_service.get_all_worker_statuses()
-                
+
                 current_state = {
                     "overview": overview,
-                    "workers": workers
+                    "workers": workers,
+                    "timestamp": datetime.utcnow().isoformat()  # Force uniqueness
                 }
-                
-                # Check if state changed
-                if current_state != self.last_state:
-                    message = {
-                        "type": "update",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "data": current_state
-                    }
-                    
-                    await self.send_to_all(message)
-                    self.last_state = current_state
-                else:
-                    # Send heartbeat
-                    await self.send_heartbeat()
-                    
+
+                # FIXED: Always send update to ensure UI stays fresh
+                # Old behavior: Only sent if state changed (comparison could miss timestamp-only changes)
+                # New behavior: Always send to ensure cards update properly
+                message = {
+                    "type": "update",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "data": current_state
+                }
+
+                await self.send_to_all(message)
+                self.last_state = current_state
+
             except Exception as e:
                 print(f"Error in broadcast loop: {e}")
 

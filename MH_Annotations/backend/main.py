@@ -141,14 +141,15 @@ async def shutdown_event():
 # Import and include routers
 # These will be uncommented as we create each router
 try:
-    from backend.api import config, control, monitoring, data, export_api, websocket
-    
+    from backend.api import config, control, monitoring, data, export_api, websocket, debug
+
     app.include_router(config.router, prefix="/api/config", tags=["Configuration"])
     app.include_router(control.router, prefix="/api/control", tags=["Control"])
     app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
     app.include_router(data.router, prefix="/api/data", tags=["Data"])
     app.include_router(export_api.router, prefix="/api/export", tags=["Export"])
     app.include_router(websocket.router, prefix="/api/ws", tags=["WebSocket"])
+    app.include_router(debug.router, prefix="/api/debug", tags=["Debug"])  # NEW: Debug endpoints
 except ImportError as e:
     print(f"Warning: Could not import all routers: {e}")
     print("Some API endpoints may not be available yet.")

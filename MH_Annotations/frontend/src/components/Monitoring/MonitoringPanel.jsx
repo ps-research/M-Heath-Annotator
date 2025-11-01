@@ -17,13 +17,49 @@ import WorkerCard from './WorkerCard';
 import AnnotationsViewerDialog from './AnnotationsViewerDialog';
 
 const MonitoringPanel = () => {
+  // Load persisted filter states from localStorage
+  const getPersistedState = () => {
+    try {
+      const saved = localStorage.getItem('monitoringPanel_filters');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Failed to load persisted filters:', error);
+    }
+    return {
+      filterStatus: 'all',
+      filterAnnotator: 'all',
+      filterDomain: 'all',
+    };
+  };
+
+  const persistedFilters = getPersistedState();
+
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterAnnotator, setFilterAnnotator] = useState('all');
+  const [filterStatus, setFilterStatus] = useState(persistedFilters.filterStatus);
+  const [filterAnnotator, setFilterAnnotator] = useState(persistedFilters.filterAnnotator);
+  const [filterDomain, setFilterDomain] = useState(persistedFilters.filterDomain);
   const [pollingInterval, setPollingInterval] = useState(null);
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+
+  // Persist filter states to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'monitoringPanel_filters',
+        JSON.stringify({
+          filterStatus,
+          filterAnnotator,
+          filterDomain,
+        })
+      );
+    } catch (error) {
+      console.error('Failed to persist filters:', error);
+    }
+  }, [filterStatus, filterAnnotator, filterDomain]);
 
   // Load workers on mount
   useEffect(() => {
@@ -87,6 +123,9 @@ const MonitoringPanel = () => {
       return false;
     }
     if (filterAnnotator !== 'all' && worker.annotator_id !== parseInt(filterAnnotator)) {
+      return false;
+    }
+    if (filterDomain !== 'all' && worker.domain !== filterDomain) {
       return false;
     }
     return true;
@@ -168,6 +207,24 @@ const MonitoringPanel = () => {
                 <MenuItem value="3">Annotator 3</MenuItem>
                 <MenuItem value="4">Annotator 4</MenuItem>
                 <MenuItem value="5">Annotator 5</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Filter by Domain</InputLabel>
+              <Select
+                value={filterDomain}
+                onChange={(e) => setFilterDomain(e.target.value)}
+                label="Filter by Domain"
+              >
+                <MenuItem value="all">All Domains</MenuItem>
+                <MenuItem value="urgency">Urgency</MenuItem>
+                <MenuItem value="therapeutic">Therapeutic</MenuItem>
+                <MenuItem value="intensity">Intensity</MenuItem>
+                <MenuItem value="adjunct">Adjunct</MenuItem>
+                <MenuItem value="modality">Modality</MenuItem>
+                <MenuItem value="redressal">Redressal</MenuItem>
               </Select>
             </FormControl>
           </Grid>

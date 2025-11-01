@@ -39,8 +39,23 @@ import WorkerGrid from './WorkerGrid';
 const ControlCenterPanel = () => {
   const dispatch = useDispatch();
 
+  // Load persisted state from localStorage
+  const getPersistedState = () => {
+    try {
+      const saved = localStorage.getItem('controlCenterPanel_state');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Failed to load persisted state:', error);
+    }
+    return { view: 'initial' };
+  };
+
+  const persistedState = getPersistedState();
+
   // State
-  const [view, setView] = useState('initial'); // 'initial' | 'running'
+  const [view, setView] = useState(persistedState.view);
   const [annotatorSummaries, setAnnotatorSummaries] = useState([]);
   const [activeWorkers, setActiveWorkers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -54,6 +69,18 @@ const ControlCenterPanel = () => {
 
   // Notifications
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+
+  // Persist view state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'controlCenterPanel_state',
+        JSON.stringify({ view })
+      );
+    } catch (error) {
+      console.error('Failed to persist state:', error);
+    }
+  }, [view]);
 
   // Load annotator summaries on mount and check for active workers
   useEffect(() => {

@@ -94,10 +94,49 @@ class DataService:
             "has_prev": page > 1
         }
 
+    def get_worker_annotations(self, annotator_id: int, domain: str, limit: int = 100) -> Dict[str, Any]:
+        """Get all annotations for a specific worker."""
+        annotations_path = self.base_dir / "data" / "annotations" / f"annotator_{annotator_id}" / domain / "annotations.jsonl"
+
+        annotations = []
+
+        if not annotations_path.exists():
+            # Return empty list if no annotations yet
+            return {
+                "annotator_id": annotator_id,
+                "domain": domain,
+                "annotations": [],
+                "total": 0
+            }
+
+        # Read all annotations (up to limit)
+        with open(annotations_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                    annotations.append(record)
+
+                    if len(annotations) >= limit:
+                        break
+                except json.JSONDecodeError:
+                    continue
+
+        # Return newest first
+        annotations.reverse()
+
+        return {
+            "annotator_id": annotator_id,
+            "domain": domain,
+            "annotations": annotations,
+            "total": len(annotations)
+        }
+
     def get_annotation(self, annotator_id: int, domain: str, sample_id: str) -> Dict[str, Any]:
         """Get specific annotation detail."""
         annotations_path = self.base_dir / "data" / "annotations" / f"annotator_{annotator_id}" / domain / "annotations.jsonl"
-        
+
         if not annotations_path.exists():
             raise FileNotFoundError(f"Annotations not found for annotator {annotator_id}, domain {domain}")
 

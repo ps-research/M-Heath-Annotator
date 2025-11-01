@@ -48,16 +48,39 @@ async def get_annotations(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/annotations/{annotator_id}/{domain}")
+async def get_worker_annotations(
+    annotator_id: int,
+    domain: str,
+    limit: int = Query(100, ge=1, le=1000)
+):
+    """Get all annotations for a specific worker (annotator-domain pair)."""
+    if annotator_id < 1 or annotator_id > 5:
+        raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
+
+    valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
+    if domain not in valid_domains:
+        raise HTTPException(status_code=400, detail=f"Invalid domain")
+
+    try:
+        annotations = data_service.get_worker_annotations(annotator_id, domain, limit)
+        return APIResponse(success=True, data=annotations)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/annotations/{annotator_id}/{domain}/{sample_id}")
 async def get_annotation(annotator_id: int, domain: str, sample_id: str):
     """Get specific annotation detail."""
     if annotator_id < 1 or annotator_id > 5:
         raise HTTPException(status_code=400, detail="Annotator ID must be between 1 and 5")
-    
+
     valid_domains = ["urgency", "therapeutic", "intensity", "adjunct", "modality", "redressal"]
     if domain not in valid_domains:
         raise HTTPException(status_code=400, detail=f"Invalid domain")
-    
+
     try:
         annotation = data_service.get_annotation(annotator_id, domain, sample_id)
         return APIResponse(success=True, data=annotation)

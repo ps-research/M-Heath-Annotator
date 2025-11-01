@@ -1,0 +1,19 @@
+{
+  "annotator_id": 1,
+  "domain": "adjunct",
+  "enabled": false,
+  "target_count": 500,
+  "status": "not_started",
+  "completed_ids": [],
+  "malformed_ids": [],
+  "last_processed_id": null,
+  "last_updated": "2025-11-01T18:58:47.453631Z",
+  "pid": null,
+  "stats": {
+    "total_completed": 0,
+    "malformed_count": 0,
+    "start_time": null,
+    "last_speed_check": null,
+    "samples_per_min": 0.0
+  }
+}

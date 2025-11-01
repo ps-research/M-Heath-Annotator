@@ -6,7 +6,7 @@ control/
 config/prompts/
 
 # Data folder
-data/
+# data/
 
 # Python cache files
 __pycache__/
